@@ -12,7 +12,8 @@ counts the items the tutor must look at (could not be graded, e.g. a bad
 waveform, or nothing recorded).
 
 CSV is used here (and only here) because it is a flat table for Excel; the
-assessments themselves are JSON.
+assessments themselves are JSON. The file starts with a "sep=," line so Excel splits
+the columns correctly on computers that use a semicolon as the list separator.
 """
 
 from __future__ import annotations
@@ -79,11 +80,22 @@ def marksheet_rows(assessment: Assessment, rows: list[MarkRow]) -> list[list[str
     return table
 
 
-def write_marksheet(path: str, assessment: Assessment, rows: list[MarkRow]) -> None:
-    """Write the mark sheet to `path` (.csv)."""
+def write_marksheet(path: str, assessment: Assessment, rows: list[MarkRow],
+                    excel_hint: bool = True) -> None:
+    """
+    Write the mark sheet to `path` (.csv).
+
+    excel_hint=True puts a first line "sep=," in the file. Excel on a computer whose
+    regional settings use a semicolon as the list separator (South Africa, much of
+    Europe) otherwise shows each whole row in ONE cell. The line tells Excel to split
+    on commas. Pass False if the file is going to a program that expects plain CSV
+    (the first line would then be read as a row).
+    """
     # utf-8-sig adds a small marker at the start so Excel reads accents correctly.
     # newline="" stops Python adding blank lines between rows on Windows.
     with open(path, "w", encoding="utf-8-sig", newline="") as f:
+        if excel_hint:
+            f.write("sep=,\r\n")
         csv.writer(f).writerows(marksheet_rows(assessment, rows))
 
 

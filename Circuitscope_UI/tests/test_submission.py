@@ -251,7 +251,19 @@ def test_csv_file_is_written_and_opens_in_excel_friendly_form(tmp_path):
     assert raw.startswith(b"\xef\xbb\xbf")                      # the Excel-friendly marker
     with open(path, encoding="utf-8-sig", newline="") as f:
         rows = list(csv.reader(f))
+    assert rows[0] == ["sep=", ""]                                # tells Excel to split on commas whatever the regional setting
+    rows = rows[1:]
     assert len(rows) == 2 and rows[1][-3] == "10"
+
+
+def test_the_excel_hint_line_can_be_left_out(tmp_path):
+    a = make_assessment()
+    report = grade_submission(a, make_submission(a), {"1A-2": True})
+    path = tmp_path / "plain.csv"
+    write_marksheet(str(path), a, [MarkRow("STU001", "UID1", report)], excel_hint=False)
+    with open(path, encoding="utf-8-sig", newline="") as f:
+        rows = list(csv.reader(f))
+    assert rows[0][0] == "Student number" and len(rows) == 2
 
 
 def test_spreadsheet_formula_in_a_student_number_is_neutralised():

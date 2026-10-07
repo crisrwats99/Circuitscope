@@ -225,7 +225,7 @@ def test_window_loads_the_saved_calibration_when_the_box_connects(qapp, tmp_path
     wait_until(lambda: window.connection.device is not None)
     assert window.connection.device.calibration == saved
     assert "Loaded" in window.calibration.status_label.text()
-    assert window.tabs.count() == 5
+    assert window.tabs.count() == 6
 
 
 def test_a_calibration_from_before_the_front_end_existed_is_ignored(qapp, tmp_path):

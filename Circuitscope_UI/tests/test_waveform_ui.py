@@ -217,7 +217,7 @@ def test_window_has_a_waveform_tab_that_works_end_to_end(qapp, tmp_path):
     from ui.connection_panel import SIMULATED
     window = MainWindow(calibration_folder=tmp_path)
     assert [window.tabs.tabText(i) for i in range(window.tabs.count())] == \
-        ["Assessment creator", "Student", "Quick measure", "Waveform", "Calibration"]
+        ["Assessment creator", "Student", "Tutor grading", "Quick measure", "Waveform", "Calibration"]
     assert not window.waveform.capture_button.isEnabled()
     window.connection.mode_box.setCurrentText(SIMULATED)
     window.connection.connect_button.click()
