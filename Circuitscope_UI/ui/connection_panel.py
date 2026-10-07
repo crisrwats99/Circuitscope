@@ -14,6 +14,7 @@ from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (QComboBox, QGroupBox, QHBoxLayout, QLabel, QPushButton,
                                QVBoxLayout, QWidget)
 
+from hardware.calibration import CIRCUITSCOPE
 from hardware.demo import make_demo_device
 from hardware.device import SerialDevice, list_serial_ports, open_serial_port
 from ui.background import run_in_background
@@ -29,7 +30,7 @@ def open_and_connect(simulated: bool, port_name: str) -> SerialDevice:
     else:
         if not port_name:
             raise RuntimeError("Choose a serial port first (and press Refresh if it is not listed).")
-        device = SerialDevice(open_serial_port(port_name))
+        device = SerialDevice(open_serial_port(port_name), front_end=CIRCUITSCOPE)
     try:
         device.connect()
     except Exception:

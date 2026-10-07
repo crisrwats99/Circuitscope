@@ -22,7 +22,7 @@ import numpy as np
 from core.models import MAX_WAVEFORM_POINTS, WaveformSpec
 from core.submission import WaveformCapture, format_uid
 from hardware import protocol
-from hardware.calibration import Calibration
+from hardware.calibration import DIRECT, Calibration, FrontEnd
 from hardware.protocol import DeviceError, DeviceTimeout, ProtocolError
 
 DEFAULT_BAUD = 115200
@@ -53,9 +53,12 @@ def list_serial_ports() -> list[str]:
 class SerialDevice:
     """Talks to the box (or the simulator) through `port`."""
 
-    def __init__(self, port, calibration: Calibration | None = None):
+    def __init__(self, port, calibration: Calibration | None = None,
+                 front_end: FrontEnd = DIRECT):
         self.port = port
+        self.front_end = front_end              # the analogue circuit in front of the converter
         self.calibration = calibration          # None = use the ideal one once INFO is known
+        self.ideal_calibration: Calibration | None = None   # the textbook one, kept so we can reset to it
         self.connected = False
         self.uid = ""                           # filled in by connect()
         self.max_points = MAX_WAVEFORM_POINTS   # replaced by the box's real limits in connect()
@@ -105,8 +108,9 @@ class SerialDevice:
         self.max_points = min(info["max_points"], MAX_WAVEFORM_POINTS)
         self.max_rate_hz = info["max_rate_hz"]
         self.adc_max = 2 ** info["adc_bits"] - 1
+        self.ideal_calibration = Calibration.ideal(info["vref_v"], info["adc_bits"], self.front_end)
         if self.calibration is None:
-            self.calibration = Calibration.ideal(info["vref_v"], info["adc_bits"])
+            self.calibration = self.ideal_calibration
         self.uid = format_uid(*words)
         self.connected = True
 
@@ -125,11 +129,12 @@ class SerialDevice:
 
     # --- sampling ------------------------------------------------------------
 
-    def sample(self, channels: list[str], rate_hz: float,
-               num_points: int) -> tuple[list[np.ndarray], float]:
+    def sample_counts(self, channels: list[str], rate_hz: float,
+                      num_points: int) -> tuple[list[np.ndarray], float]:
         """
-        Sample 1 or 2 channels at the same time.
-        Returns (one array of VOLTS per channel, the sample rate the box really used).
+        Sample 1 or 2 channels at the same time and return the RAW COUNTS (whole
+        numbers 0..4095, one array per channel) plus the sample rate the box really used.
+        Calibration works on counts, so it needs this before they become volts.
         """
         self._require_connection()
         if num_points > self.max_points:
@@ -146,8 +151,30 @@ class SerialDevice:
         except DeviceError:
             self._flush()                    # do not let leftovers confuse the next command
             raise
-        volts = [self.calibration.counts_to_volts(counts) for counts in data]
-        return volts, actual_rate
+        return [np.asarray(counts, dtype=float) for counts in data], actual_rate
+
+    def sample(self, channels: list[str], rate_hz: float,
+               num_points: int) -> tuple[list[np.ndarray], float]:
+        """
+        Like sample_counts, but converted to VOLTS with the current calibration.
+        Returns (one array of volts per channel, the sample rate the box really used).
+        """
+        counts, actual_rate = self.sample_counts(channels, rate_hz, num_points)
+        return [self.calibration.counts_to_volts(c) for c in counts], actual_rate
+
+    def read_mean_counts(self, channel: str, num_points: int = 500,
+                         rate_hz: float = 20_000) -> tuple[float, float]:
+        """
+        Average raw count of one channel, and how much it wobbles (standard
+        deviation, in counts). Used by the calibration screen.
+        """
+        (counts,), _rate = self.sample_counts([channel], rate_hz, num_points)
+        return float(np.mean(counts)), float(np.std(counts))
+
+    def reset_calibration(self) -> None:
+        """Go back to the textbook (ideal) calibration."""
+        self._require_connection()
+        self.calibration = self.ideal_calibration
 
     def measure_voltage(self, probe_pos: str, probe_neg: str,
                         num_points: int = 200, rate_hz: float = 20_000) -> float:

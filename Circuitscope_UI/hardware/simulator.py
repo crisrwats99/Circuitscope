@@ -28,6 +28,7 @@ from typing import Callable
 import numpy as np
 
 from hardware import protocol
+from hardware.calibration import DIRECT, FrontEnd
 
 TIMER_CLOCK_HZ = 170_000_000      # the G431 timer clock: sample rates are TIMER_CLOCK / whole number
 
@@ -36,13 +37,18 @@ class SimulatedBoard:
     def __init__(self, uid_words=(0x0012AB34, 0xCD56EF78, 0x0011AABB), *,
                  max_points: int = 8000, max_rate_hz: int = 200_000,
                  adc_bits: int = 12, vref_v: float = 3.3,
-                 noise_v: float = 0.0, seed: int = 1, protocol_version: int | None = None):
+                 noise_v: float = 0.0, seed: int = 1, protocol_version: int | None = None,
+                 adc_gain: float = 1.0, adc_offset_v: float = 0.0,
+                 front_end: FrontEnd = DIRECT):
         self.uid_words = uid_words
         self.max_points = max_points
         self.max_rate_hz = max_rate_hz
         self.adc_bits = adc_bits
         self.vref_v = vref_v
         self.noise_v = noise_v                      # random noise (volts, standard deviation)
+        self.adc_gain = adc_gain                    # imperfect converter: reads true volts x gain ...
+        self.adc_offset_v = adc_offset_v            # ... plus this offset (what calibration must correct)
+        self.front_end = front_end                  # the analogue circuit in front of the converter
         self.protocol_version = protocol_version or protocol.PROTOCOL_VERSION
         self._rng = np.random.default_rng(seed)     # fixed seed -> same noise every run
         self._signals: dict[str, float | Callable] = {}
@@ -105,7 +111,8 @@ class SimulatedBoard:
         for ch in channels:
             signal = self._signals.get(ch, 0.0)               # unconnected point reads 0 V
             volts = signal(t) if callable(signal) else np.full(count, signal)
-            volts = np.asarray(volts, dtype=float)
+            # input volts -> front end -> voltage at the converter pin -> imperfect converter
+            volts = self.front_end.to_pin(volts) * self.adc_gain + self.adc_offset_v
             if self.noise_v:
                 volts = volts + self._rng.normal(0.0, self.noise_v, count)
             # The converter can only see 0..vref and only whole counts.

@@ -85,3 +85,19 @@ def write_marksheet(path: str, assessment: Assessment, rows: list[MarkRow]) -> N
     # newline="" stops Python adding blank lines between rows on Windows.
     with open(path, "w", encoding="utf-8-sig", newline="") as f:
         csv.writer(f).writerows(marksheet_rows(assessment, rows))
+
+
+def write_waveform_csv(path: str, samples, sample_rate_hz: float, ref_samples=None) -> None:
+    """
+    Save a capture as CSV (time in seconds, volts) so it can be plotted in Excel or
+    included in a report. A reference channel adds a third column.
+    """
+    with open(path, "w", encoding="utf-8", newline="") as f:
+        writer = csv.writer(f)
+        header = ["time_s", "volts"] + (["ref_volts"] if ref_samples is not None else [])
+        writer.writerow(header)
+        for i, volts in enumerate(samples):
+            row = [f"{i / sample_rate_hz:.9g}", f"{volts:.6f}"]
+            if ref_samples is not None:
+                row.append(f"{ref_samples[i]:.6f}")
+            writer.writerow(row)

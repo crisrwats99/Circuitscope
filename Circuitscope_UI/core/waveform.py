@@ -24,6 +24,7 @@ Conventions (write these in the lab sheet so students and lecturers agree):
 from __future__ import annotations
 
 import math
+from dataclasses import dataclass
 
 import numpy as np
 
@@ -32,9 +33,13 @@ from core.models import TWO_CHANNEL_FEATURES, WaveformFeature, WaveformSpec
 # A capture must contain at least this many samples to be worth analysing.
 MIN_SAMPLES = 8
 
-# A signal flatter than this (peak-to-peak, in volts) is treated as "no signal"
-# when we need to find edges. It stops noise on a flat DC line being read as a wave.
-MIN_SWING_V = 1e-6
+# A signal whose peak-to-peak swing is smaller than this is treated as "no signal"
+# when we need to find cycles or edges. Without it, the few millivolts of ADC noise on
+# a steady DC level would be "measured" as a wave with a meaningless frequency.
+# The box measures +/-15 V with a 12-bit converter, so one count is about 9 mV of
+# INPUT voltage and 2 mV of noise at the converter pin is about 22 mV at the input.
+# 0.25 V (about 28 counts) is well above that noise.
+MIN_SWING_V = 0.25
 
 # Fraction of the peak-to-peak swing used as hysteresis when detecting crossings.
 # The signal must move this far past the middle level before a crossing counts,
@@ -119,10 +124,34 @@ def _crossings(x: np.ndarray) -> tuple[list[float], list[float]]:
 
 def _interpolate(x: np.ndarray, i: int, level: float, going_up: bool) -> float:
     """
-    Sample `i` is the first one clearly past `level`. Walk back to the sample pair
-    that straddles `level` and return the exact (fractional) crossing position
-    using a straight line between the two samples.
+    Sample `i` is the first one clearly past `level`. Return the exact (fractional)
+    position where the edge crosses `level`.
+
+    Joining just the two samples either side of the level is easily thrown off by
+    noise (it made a noisy phase read several degrees low), so the position is found
+    by fitting a straight line to ALL the samples on the middle part of the edge
+    (from a quarter-swing below the level to a quarter-swing above it) and seeing
+    where that line passes through the level. A very sharp edge has too few samples
+    for a fit, so it falls back to the simple two-sample method.
     """
+    half = (float(x.max()) - float(x.min())) / 2.0
+    low_edge, high_edge = level - 0.5 * half, level + 0.5 * half
+    start_bound, end_bound = (low_edge, high_edge) if going_up else (high_edge, low_edge)
+
+    # The edge region: walk back to where the edge left its starting side, then
+    # forward to where it reaches the far side.
+    a = i
+    while a > 0 and (x[a] > start_bound if going_up else x[a] < start_bound):
+        a -= 1
+    b = i
+    while b < len(x) - 1 and (x[b] < end_bound if going_up else x[b] > end_bound):
+        b += 1
+    if b - a + 1 >= 4:
+        slope, intercept = np.polyfit(np.arange(a, b + 1), x[a:b + 1], 1)
+        if (slope > 0) == going_up and slope != 0:
+            return float((level - intercept) / slope)
+
+    # Fallback: two samples either side of the level.
     j = i
     if going_up:
         while j > 0 and x[j - 1] >= level:     # step back until the previous sample is below
@@ -132,10 +161,10 @@ def _interpolate(x: np.ndarray, i: int, level: float, going_up: bool) -> float:
             j -= 1
     if j == 0:
         return 0.0
-    a, b = float(x[j - 1]), float(x[j])        # the two samples either side of the level
-    if b == a:
+    lo, hi = float(x[j - 1]), float(x[j])      # the two samples either side of the level
+    if hi == lo:
         return float(j)
-    return (j - 1) + (level - a) / (b - a)     # fraction of the way from j-1 to j
+    return (j - 1) + (level - lo) / (hi - lo)  # fraction of the way from j-1 to j
 
 
 def _frequency(x: np.ndarray, rate: float) -> float:
@@ -174,6 +203,8 @@ def _edge_time(x: np.ndarray, rate: float, rising: bool) -> float:
     middle, so a single noisy spike or overshoot does not distort them.
     A falling edge is measured by flipping the signal upside down.
     """
+    if float(x.max() - x.min()) < MIN_SWING_V:
+        raise WaveformError("The signal is flat: there is no edge to measure.")
     y = x if rising else -x
     mid = _mid_level(y)
     base = float(np.median(y[y < mid]))         # typical "low" level
@@ -269,7 +300,7 @@ def compute_feature(feature: WaveformFeature, samples, sample_rate_hz: float,
     # Two-signal features need a reference channel of the same length.
     if feature in TWO_CHANNEL_FEATURES:
         if ref_samples is None:
-            raise WaveformError(f"{feature.value} needs a reference channel.")
+            raise WaveformError(f"{feature.value.replace('_', ' ').capitalize()} needs a reference channel.")
         ref = _as_array(ref_samples)
         n = min(len(x), len(ref))           # use the part both captures share
         x, ref = x[:n], ref[:n]
@@ -301,3 +332,50 @@ def compute_feature(feature: WaveformFeature, samples, sample_rate_hz: float,
 def compute_from_spec(spec: WaveformSpec, samples, ref_samples=None) -> float:
     """Same as compute_feature, but takes the settings from an item's WaveformSpec."""
     return compute_feature(spec.feature, samples, spec.sample_rate_hz, ref_samples)
+
+
+# ---------------------------------------------------------------------------
+# Measuring EVERY feature at once (for the waveform viewer and tutor screens)
+# ---------------------------------------------------------------------------
+
+@dataclass
+class FeatureResult:
+    """One feature of a capture: its value, or the reason it could not be measured."""
+    feature: WaveformFeature
+    value: float | None = None       # None when it could not be measured
+    error: str = ""                  # the reason (shown to the user)
+
+
+def compute_all(samples, sample_rate_hz: float, ref_samples=None) -> list[FeatureResult]:
+    """
+    Try all eleven features and report each one. A feature that cannot be measured
+    (e.g. frequency of a flat line, or gain with no reference channel) gets an
+    explanation instead of stopping the others.
+    """
+    results = []
+    for feature in WaveformFeature:                       # the enum lists them in a sensible order
+        try:
+            results.append(FeatureResult(feature, compute_feature(
+                feature, samples, sample_rate_hz, ref_samples)))
+        except WaveformError as exc:
+            results.append(FeatureResult(feature, None, str(exc)))
+    return results
+
+
+def format_feature(feature: WaveformFeature, value: float | None) -> str:
+    """A feature value as text with sensible units, e.g. 998.7 Hz, 1.000 ms, 50.0 %."""
+    if value is None:
+        return "-"
+    if feature == WaveformFeature.FREQUENCY:
+        return f"{value:.1f} Hz"
+    if feature == WaveformFeature.PERIOD:
+        return f"{value * 1000:.3f} ms"
+    if feature == WaveformFeature.DUTY_CYCLE:
+        return f"{value * 100:.1f} %"
+    if feature == WaveformFeature.GAIN:
+        return f"{value:.3f}"                             # a plain ratio
+    if feature == WaveformFeature.PHASE_DIFFERENCE:
+        return f"{value:.1f} \u00b0"                      # degree sign
+    if feature in (WaveformFeature.RISE_TIME, WaveformFeature.FALL_TIME):
+        return f"{value * 1e6:.1f} \u00b5s"               # micro sign
+    return f"{value:.3f} V"                               # peak, peak-to-peak, RMS, DC offset

@@ -222,8 +222,8 @@ def test_device_failure_is_shown_in_red_and_the_button_recovers(qapp):
 
 # ---------- whole window ----------
 
-def test_main_window_wires_the_panels_together(qapp):
-    window = MainWindow()
+def test_main_window_wires_the_panels_together(qapp, tmp_path):
+    window = MainWindow(calibration_folder=tmp_path)
     assert window.windowTitle() == "Circuitscope"
     assert not window.quick.measure_button.isEnabled()
     connect_demo(window.connection)
@@ -235,8 +235,8 @@ def test_main_window_wires_the_panels_together(qapp):
     assert not window.quick.measure_button.isEnabled()
 
 
-def test_closing_the_window_closes_the_box(qapp):
-    window = MainWindow()
+def test_closing_the_window_closes_the_box(qapp, tmp_path):
+    window = MainWindow(calibration_folder=tmp_path)
     connect_demo(window.connection)
     port = window.connection.device.port
     window.close()

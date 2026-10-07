@@ -13,12 +13,13 @@ from __future__ import annotations
 
 import numpy as np
 
+from hardware.calibration import CIRCUITSCOPE
 from hardware.device import SerialDevice
 from hardware.simulator import SimulatedBoard, SimulatedPort
 
 
 def make_demo_board() -> SimulatedBoard:
-    board = SimulatedBoard(noise_v=0.002)               # 2 mV of noise, like a real converter
+    board = SimulatedBoard(noise_v=0.002, front_end=CIRCUITSCOPE)   # 2 mV of noise at the converter pin
     board.set_dc("P1", 3.0)
     board.set_dc("P2", 1.2)
     board.set_dc("P3", 0.0)
@@ -29,4 +30,4 @@ def make_demo_board() -> SimulatedBoard:
 
 def make_demo_device() -> SerialDevice:
     """A driver wired to the demo board. NOT connected yet (call .connect())."""
-    return SerialDevice(SimulatedPort(make_demo_board()))
+    return SerialDevice(SimulatedPort(make_demo_board()), front_end=CIRCUITSCOPE)
