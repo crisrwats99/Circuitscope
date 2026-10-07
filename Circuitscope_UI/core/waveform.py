@@ -59,9 +59,9 @@ def _as_array(samples) -> np.ndarray:
     """Convert the samples to a 1-D float array and make sure they are usable."""
     x = np.asarray(samples, dtype=float)
     if x.ndim != 1 or x.size < MIN_SAMPLES:
-        raise WaveformError(f"Need at least {MIN_SAMPLES} samples in a single list.")
+        raise WaveformError(f"A waveform needs at least {MIN_SAMPLES} samples in one list of numbers, but {x.size if x.ndim == 1 else 'a table of numbers'} were given. Capture more points.")
     if not np.all(np.isfinite(x)):
-        raise WaveformError("The samples contain NaN or infinite values.")
+        raise WaveformError(f"{int(np.sum(~np.isfinite(x)))} of the {x.size} samples are NaN or infinite, so the waveform cannot be analysed. Capture it again.")
     return x
 
 

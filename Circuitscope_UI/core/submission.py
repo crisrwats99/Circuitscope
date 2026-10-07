@@ -65,7 +65,7 @@ def format_uid(word0: int, word1: int, word2: int) -> str:
     """
     for w in (word0, word1, word2):
         if not isinstance(w, int) or not 0 <= w <= 0xFFFFFFFF:
-            raise SubmissionError("A UID word must be a whole number from 0 to 2^32 - 1.")
+            raise SubmissionError(f"A UID word must be a whole number from 0 to 4294967295, but got {w!r}.")
     return f"{word0:08X}{word1:08X}{word2:08X}"
 
 
@@ -98,16 +98,23 @@ class Submission:
     def to_payload(self) -> dict:
         """Check the data, then turn it into plain dictionaries and lists."""
         number = self.student_number.strip()
-        if not number or len(number) > MAX_STUDENT_NUMBER_LENGTH \
-                or any(ord(c) < 32 for c in number):
-            raise SubmissionError("The student number is empty, too long, or has odd characters.")
+        if not number:
+            raise SubmissionError("The student number is empty. Type your student number before submitting.")
+        if len(number) > MAX_STUDENT_NUMBER_LENGTH:
+            raise SubmissionError(f"The student number is {len(number)} characters long; the maximum is "
+                                  f"{MAX_STUDENT_NUMBER_LENGTH}. Check that you typed only your student number.")
+        if any(ord(c) < 32 for c in number):
+            raise SubmissionError("The student number contains a control character (such as a tab or "
+                                  "line break). Retype it using only letters and digits.")
         if not self.device_uid.strip():
-            raise SubmissionError("The device UID is missing.")
+            raise SubmissionError("The box's UID is missing, so the submission cannot be tied to a box. "
+                                  "Connect to the box and try again.")
 
-        def finite(x) -> float:
+        def finite(x, what: str = "a value") -> float:
             """Every number must be real: JSON cannot hold NaN or infinity."""
             if isinstance(x, bool) or not isinstance(x, (int, float)) or not math.isfinite(x):
-                raise SubmissionError(f"'{x}' is not a valid number.")
+                raise SubmissionError(f"{what} is '{x}', which is not a usable number (it must be an "
+                                      f"ordinary number, not text, NaN or infinity).")
             return float(x)
 
         return {
@@ -116,15 +123,16 @@ class Submission:
             "student_number": number,
             "device_uid": self.device_uid.strip(),
             "created_utc": self.created_utc,
-            "measurements": {k: finite(v) for k, v in self.measurements.items()},
-            "variables": {q: {n: finite(v) for n, v in vals.items()}
+            "measurements": {k: finite(v, f"The measurement for item {k}") for k, v in self.measurements.items()},
+            "variables": {q: {n: finite(v, f"Variable {n} of question {q}") for n, v in vals.items()}
                           for q, vals in self.variables.items()},
             "waveforms": {
                 item_id: {
-                    "sample_rate_hz": finite(c.sample_rate_hz),
-                    "samples": [finite(s) for s in c.samples],
+                    "sample_rate_hz": finite(c.sample_rate_hz, f"The sample rate of the waveform for item {item_id}"),
+                    "samples": [finite(s, f"A sample of the waveform for item {item_id}") for s in c.samples],
                     "ref_samples": None if c.ref_samples is None
-                    else [finite(s) for s in c.ref_samples],
+                    else [finite(s, f"A reference sample of the waveform for item {item_id}")
+                          for s in c.ref_samples],
                 } for item_id, c in self.waveforms.items()
             },
         }
@@ -149,7 +157,7 @@ class Submission:
                     for item_id, c in p.get("waveforms", {}).items()},
             )
         except (KeyError, TypeError, AttributeError) as exc:
-            raise SubmissionError(f"The submission is missing required data ({exc}).") from exc
+            raise SubmissionError(f"The submission is damaged: the required field {exc} is missing or has the wrong type.") from exc
 
 
 # ---------------------------------------------------------------------------

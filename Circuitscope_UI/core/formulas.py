@@ -91,6 +91,57 @@ _UNARY_OPS = (ast.UAdd, ast.USub)
 # Step 1: read the text and check that every part of it is allowed.
 # ---------------------------------------------------------------------------
 
+ALLOWED_SUMMARY = ("A formula can only calculate with numbers, variable names, + - * / ^ ( ) "
+                   "and functions such as sqrt().")
+
+# Friendly names for the Python constructs people sometimes type by accident.
+_NODE_NAMES = {
+    "Compare": "a comparison (==, <, >)", "IfExp": "if/else", "BoolOp": "and/or",
+    "Lambda": "lambda", "Attribute": "a dot followed by a name (like x.y)",
+    "Subscript": "square brackets [ ]", "List": "a list [ ]", "Dict": "braces { }",
+    "Set": "braces { }", "JoinedStr": "an f-string", "Starred": "a * in front of a name",
+    "NamedExpr": "':='", "ListComp": "a list comprehension",
+}
+_OPERATOR_SYMBOLS = {"FloorDiv": "//", "Mod": "%", "LShift": "<<", "RShift": ">>", "BitOr": "|",
+                     "BitAnd": "&", "BitXor": "^", "MatMult": "@", "Invert": "~", "Not": "not"}
+
+
+def _explain_syntax_error(cleaned: str, exc: Exception) -> str:
+    """Turn Python's terse syntax error into advice about the formula the lecturer typed."""
+    if not isinstance(exc, SyntaxError):
+        return ("the formula could not be read. It may be too deeply nested or contain an "
+                "unreadable character. Simplify it and type it again.")
+    message = (exc.msg or "").lower()
+    shown = cleaned.replace("**", "^")
+    shown = (shown[:40] + "...") if len(shown) > 40 else shown
+    if "never closed" in message:
+        return "a bracket '(' was never closed. Add the matching ')'."
+    if "unmatched" in message:
+        return "a ')' has no matching '('. Remove it, or add the '(' it belongs to."
+    if "decimal literal" in message or "invalid imaginary" in message:
+        return ("a number is stuck directly to letters (like 2R1). Put * between them, "
+                "for example 2 * R1.")
+    if "unterminated" in message or "quote" in message:
+        return "a quote mark was never closed. Quote marks are not allowed in formulas."
+    if "invalid character" in message or "non-printable" in message:
+        return ("it contains a character that is not allowed, for example a × or ÷ symbol or a "
+                "curly bracket. Use * to multiply and / to divide.")
+    if cleaned.rstrip()[-1:] in "+-*/":
+        return (f"it ends with the operator '{cleaned.rstrip()[-1]}' and nothing after it. "
+                f"Type the value that should follow it.")
+    return (f"there is a mistake in '{shown}'. Common causes: an operator (+ - * /) with nothing "
+            f"after it, two values side by side with no operator between them (write R1 * R2), "
+            f"or a stray symbol.")
+
+
+def _function_argument_text(low: int, high: int | None) -> str:
+    if high == low:
+        return f"{low} argument{'' if low == 1 else 's'}"
+    if high is None:
+        return f"at least {low} argument{'' if low == 1 else 's'}"
+    return f"{low} to {high} arguments"
+
+
 def _check_node(node: ast.AST, names: set[str]) -> None:
     """
     Raise FormulaError if `node` (or anything inside it) is not allowed.
@@ -103,39 +154,54 @@ def _check_node(node: ast.AST, names: set[str]) -> None:
         # Only plain numbers. `True` counts as an int in Python, so exclude
         # bool explicitly; strings, None, complex numbers etc. are refused.
         if isinstance(node.value, bool) or not isinstance(node.value, (int, float)):
-            raise FormulaError("only plain numbers are allowed")
+            what = ("text (something in quote marks)" if isinstance(node.value, str)
+                    else f"the value {node.value!r}")
+            raise FormulaError(f"{what} is not allowed. {ALLOWED_SUMMARY}")
 
     elif isinstance(node, ast.Name):                # a variable or constant name
         names.add(node.id)
 
     elif isinstance(node, ast.BinOp):               # a + b, a * b, a ** b ...
         if not isinstance(node.op, _BINARY_OPS):
-            raise FormulaError("operator not allowed (use + - * / ^ only)")
+            symbol = _OPERATOR_SYMBOLS.get(type(node.op).__name__, type(node.op).__name__)
+            raise FormulaError(f"the operator '{symbol}' is not allowed. Use only + - * / and ^ (power).")
         _check_node(node.left, names)
         _check_node(node.right, names)
 
     elif isinstance(node, ast.UnaryOp):             # -a  or  +a
         if not isinstance(node.op, _UNARY_OPS):
-            raise FormulaError("operator not allowed")
+            symbol = _OPERATOR_SYMBOLS.get(type(node.op).__name__, type(node.op).__name__)
+            raise FormulaError(f"the operator '{symbol}' is not allowed. Only a minus or plus sign "
+                               f"in front of a value is allowed.")
         _check_node(node.operand, names)
 
     elif isinstance(node, ast.Call):                # sqrt(x), max(a, b) ...
         # The function must be a plain name from our list: no obj.method(...).
-        if not (isinstance(node.func, ast.Name) and node.func.id in FUNCTIONS):
-            raise FormulaError("unknown or disallowed function")
+        if not isinstance(node.func, ast.Name):
+            raise FormulaError("only plain function names such as sqrt(...) can be called.")
+        if node.func.id not in FUNCTIONS:
+            raise FormulaError(f"'{node.func.id}' is not a known function. Available functions: "
+                               f"{', '.join(sorted(FUNCTIONS))}. (If '{node.func.id}' is a variable, "
+                               f"put * between it and the bracket: {node.func.id} * (...).)")
         if node.keywords:                           # name=value arguments
-            raise FormulaError("named arguments are not allowed")
+            raise FormulaError("named arguments such as x=3 are not allowed. Give the values in order.")
         _func, low, high = FUNCTIONS[node.func.id]
         count = len(node.args)
         if count < low or (high is not None and count > high):
-            raise FormulaError(f"wrong number of arguments for {node.func.id}()")
+            raise FormulaError(f"{node.func.id}() needs {_function_argument_text(low, high)} "
+                               f"but {count} {'was' if count == 1 else 'were'} given.")
         for argument in node.args:
             _check_node(argument, names)
 
     else:
         # Attribute access, subscripts, lists, comparisons, lambdas,
         # if-expressions, strings ... everything else lands here and is refused.
-        raise FormulaError(f"'{type(node).__name__}' is not allowed in a formula")
+        if isinstance(node, ast.Tuple):
+            raise FormulaError("a comma was found outside a function's brackets. If you meant a decimal, "
+                               "use a point (3.3, not 3,3). Commas may only separate a function's "
+                               "arguments, as in max(R1, R2).")
+        friendly = _NODE_NAMES.get(type(node).__name__, f"'{type(node).__name__}'")
+        raise FormulaError(f"{friendly} is not allowed in a formula. {ALLOWED_SUMMARY}")
 
 
 def _parse(text: str) -> tuple[ast.Expression, set[str]]:
@@ -159,7 +225,7 @@ def _parse(text: str) -> tuple[ast.Expression, set[str]]:
     except FormulaError:
         raise                                       # already a good message
     except (SyntaxError, ValueError, RecursionError, MemoryError) as exc:
-        raise FormulaError(f"could not read the formula: {exc}") from exc
+        raise FormulaError(f"the formula is not valid: {_explain_syntax_error(cleaned, exc)}") from exc
     return tree, names
 
 
@@ -241,7 +307,12 @@ def evaluate_formula(text: str, values: dict[str, float | None]) -> float:
         result = _eval(tree.body, numbers)
     except (ZeroDivisionError, OverflowError, ValueError) as exc:
         # e.g. sqrt(-1), log(0), a number too big to hold
-        raise FormulaError(f"cannot calculate: {exc}") from exc
+        if isinstance(exc, ZeroDivisionError):
+            raise FormulaError("division by zero") from exc
+        if isinstance(exc, OverflowError):
+            raise FormulaError("a number became too large to calculate") from exc
+        raise FormulaError("a function was given a value it cannot handle (for example sqrt of a "
+                           "negative number, or log of 0 or a negative number)") from exc
 
     if not math.isfinite(result):
         raise FormulaError("the result is not a finite number")

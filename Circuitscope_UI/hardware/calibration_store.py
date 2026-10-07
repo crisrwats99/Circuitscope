@@ -45,7 +45,7 @@ def default_calibration_folder() -> Path:
 
 def _path(uid: str, folder) -> Path:
     if not isinstance(uid, str) or not _UID_RE.match(uid):
-        raise CalibrationError("The box UID must be 24 hex digits.")
+        raise CalibrationError(f"The box UID must be exactly 24 hexadecimal digits (0-9, A-F), but it is {uid!r}.")
     return Path(folder if folder is not None else default_calibration_folder()) / f"{uid.upper()}.json"
 
 

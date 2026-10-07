@@ -131,3 +131,33 @@ def test_check_formula_reports_unknown_variable():
 def test_check_formula_reports_syntax_and_function_errors():
     assert check_formula("R1 +", {"R1"})            # syntax error -> a message
     assert check_formula("sqr(4)", set())           # misspelt function -> a message
+
+
+# ---------- error messages say what is wrong and how to fix it ----------
+
+@pytest.mark.parametrize("formula, must_contain", [
+    ("5 *", "ends with the operator '*'"),
+    ("sqrt(R1", "never closed"),
+    ("R1 + R2)", "no matching '('"),
+    ("2R1", "Put * between them"),
+    ("R1 × R2", "Use * to multiply"),
+    ("foo(R1)", "'foo' is not a known function"),
+    ("foo(R1)", "sqrt"),
+    ("sin()", "sin() needs 1 argument but 0 were given"),
+    ("max(R1)", "at least 2 arguments"),
+    ("R1 // 2", "'//' is not allowed"),
+    ("R1 == 2", "comparison"),
+    ("3,3 * R1", "use a point"),
+    ("'abc'", "text"),
+    ("x.y", "dot"),
+])
+def test_formula_problems_are_explained(formula, must_contain):
+    messages = check_formula(formula, {"R1", "R2"})
+    assert messages and must_contain in " ".join(messages)
+
+
+def test_calculation_failures_are_explained():
+    with pytest.raises(FormulaError, match="negative number"):
+        evaluate_formula("sqrt(R1 - 5)", {"R1": 1})
+    with pytest.raises(FormulaError, match="division by zero"):
+        evaluate_formula("1 / R1", {"R1": 0})

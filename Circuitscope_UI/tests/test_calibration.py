@@ -6,7 +6,7 @@ import json
 
 import pytest
 
-from hardware.calibration import Calibration, check_plausible
+from hardware.calibration import CIRCUITSCOPE, DIRECT, Calibration, check_plausible
 from hardware.calibration_store import (CalibrationError, delete_calibration, load_calibration,
                                         save_calibration)
 from hardware.device import SerialDevice
@@ -159,3 +159,17 @@ def test_two_point_calibration_corrects_gain_and_offset_errors():
 
     (after,), _ = device.sample(["P2"], 1000, 200)
     assert after.mean() == pytest.approx(1.5, abs=0.005)                       # corrected
+
+
+def test_front_end_is_saved_and_loaded_with_the_calibration(tmp_path):
+    save_calibration(UID, Calibration(0.009, -18.3), tmp_path, front_end=CIRCUITSCOPE)
+    assert load_calibration(UID, tmp_path).front_end == CIRCUITSCOPE
+
+
+def test_a_file_with_no_front_end_recorded_counts_as_direct(tmp_path):
+    save_calibration(UID, Calibration(0.001, 0.0), tmp_path)
+    path = tmp_path / f"{UID}.json"
+    document = json.loads(path.read_text())
+    del document["front_end"]                                   # what a Stage 10 file looks like
+    path.write_text(json.dumps(document))
+    assert load_calibration(UID, tmp_path).front_end == DIRECT

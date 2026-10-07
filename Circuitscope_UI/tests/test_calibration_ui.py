@@ -10,7 +10,7 @@ pytest.importorskip("PySide6")
 from PySide6.QtCore import QCoreApplication
 from PySide6.QtWidgets import QApplication
 
-from hardware.calibration import Calibration
+from hardware.calibration import CIRCUITSCOPE, Calibration
 from hardware.calibration_store import load_calibration, save_calibration
 from hardware.device import SerialDevice
 from hardware.simulator import SimulatedBoard, SimulatedPort
@@ -218,11 +218,35 @@ def test_disconnecting_clears_the_panel(qapp, tmp_path):
 def test_window_loads_the_saved_calibration_when_the_box_connects(qapp, tmp_path):
     from ui.connection_panel import SIMULATED
     saved = Calibration(volts_per_count=0.00081, offset_v=0.01)
-    save_calibration(UID, saved, tmp_path)                # the demo box has this UID
+    save_calibration(UID, saved, tmp_path, front_end=CIRCUITSCOPE)   # the demo box has this UID and front end
     window = MainWindow(calibration_folder=tmp_path)
     window.connection.mode_box.setCurrentText(SIMULATED)
     window.connection.connect_button.click()
     wait_until(lambda: window.connection.device is not None)
     assert window.connection.device.calibration == saved
     assert "Loaded" in window.calibration.status_label.text()
-    assert window.tabs.count() == 2
+    assert window.tabs.count() == 4
+
+
+def test_a_calibration_from_before_the_front_end_existed_is_ignored(qapp, tmp_path):
+    # Saved with no front end recorded (the old 0-3.3 V scale), then the box connects
+    # WITH the +/-15 V front end: using it would read 1.2 V as 0.108 V.
+    from ui.connection_panel import SIMULATED
+    save_calibration(UID, Calibration(volts_per_count=0.000806, offset_v=0.0), tmp_path)
+    window = MainWindow(calibration_folder=tmp_path)
+    window.connection.mode_box.setCurrentText(SIMULATED)
+    window.connection.connect_button.click()
+    wait_until(lambda: window.connection.device is not None)
+    device = window.connection.device
+    assert device.calibration == device.ideal_calibration           # ideal values, not the stale ones
+    assert "different front end" in window.calibration.status_label.text()
+    assert device.measure_voltage("P2", "P3") == pytest.approx(1.2, abs=0.05)
+
+
+def test_a_new_calibration_remembers_the_front_end_it_was_made_for(qapp, tmp_path):
+    device = make_device()
+    panel = CalibrationPanel(folder=tmp_path)
+    panel.set_device(device)
+    read_both(panel)
+    panel.apply_button.click()
+    assert load_calibration(UID, tmp_path).front_end == device.front_end
