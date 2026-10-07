@@ -92,6 +92,7 @@ class Submission:
     measurements: dict[str, float] = field(default_factory=dict)       # item id -> value
     variables: dict[str, dict[str, float]] = field(default_factory=dict)  # question id -> {name: value}
     waveforms: dict[str, WaveformCapture] = field(default_factory=dict)   # item id -> capture
+    theory_answers: dict[str, str] = field(default_factory=dict)          # item id -> what the student typed
 
     # --- converting to / from plain dictionaries (so they can become JSON) ---
 
@@ -126,6 +127,7 @@ class Submission:
             "measurements": {k: finite(v, f"The measurement for item {k}") for k, v in self.measurements.items()},
             "variables": {q: {n: finite(v, f"Variable {n} of question {q}") for n, v in vals.items()}
                           for q, vals in self.variables.items()},
+            "theory_answers": {k: str(v) for k, v in self.theory_answers.items()},
             "waveforms": {
                 item_id: {
                     "sample_rate_hz": finite(c.sample_rate_hz, f"The sample rate of the waveform for item {item_id}"),
@@ -149,6 +151,7 @@ class Submission:
                 created_utc=p.get("created_utc", ""),
                 measurements=dict(p.get("measurements", {})),
                 variables={q: dict(v) for q, v in p.get("variables", {}).items()},
+                theory_answers={k: str(v) for k, v in p.get("theory_answers", {}).items()},
                 waveforms={
                     item_id: WaveformCapture(
                         samples=list(c["samples"]),
@@ -236,7 +239,7 @@ def check_matches(assessment: Assessment, sub: Submission) -> list[str]:
         problems.append("The assessment was edited after this submission was made "
                         "(version fingerprint differs). Marks may not be reliable.")
     known = {item.id for _q, _p, item in assessment.iter_items()}
-    for item_id in list(sub.measurements) + list(sub.waveforms):
+    for item_id in list(sub.measurements) + list(sub.waveforms) + list(sub.theory_answers):
         if item_id not in known:
             problems.append(f"The submission has data for unknown item '{item_id}'.")
     return problems

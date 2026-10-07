@@ -14,19 +14,21 @@ from ui.assessment_editor import AssessmentEditor
 from ui.calibration_panel import CalibrationPanel
 from ui.connection_panel import ConnectionPanel
 from ui.quick_measure import QuickMeasurePanel
+from ui.student_panel import StudentPanel
 from ui.waveform_panel import WaveformPanel
 
 APP_NAME = "Circuitscope"
 
 
 class MainWindow(QMainWindow):
-    def __init__(self, calibration_folder=None):
+    def __init__(self, calibration_folder=None, progress_folder=None):
         super().__init__()
         self.setWindowTitle(APP_NAME)
         self.resize(1300, 760)
 
         self.connection = ConnectionPanel()
         self.creator = AssessmentEditor()
+        self.student = StudentPanel(progress_folder=progress_folder)
         self.quick = QuickMeasurePanel()
         self.calibration = CalibrationPanel(folder=calibration_folder)
         self.waveform = WaveformPanel()
@@ -34,6 +36,7 @@ class MainWindow(QMainWindow):
         # The tools sit on tabs to the right of the connection panel.
         self.tabs = QTabWidget()
         self.tabs.addTab(self.creator, "Assessment creator")
+        self.tabs.addTab(self.student, "Student")
         self.tabs.addTab(self.quick, "Quick measure")
         self.tabs.addTab(self.waveform, "Waveform")
         self.tabs.addTab(self.calibration, "Calibration")
@@ -59,6 +62,7 @@ class MainWindow(QMainWindow):
     def _device_changed(self, device) -> None:
         self.calibration.set_device(device)      # first: loads the box's saved calibration
         self.quick.set_device(device)
+        self.student.set_device(device)
         self.waveform.set_device(device)
         if device is None:
             self.setWindowTitle(APP_NAME)
