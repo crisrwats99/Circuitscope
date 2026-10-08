@@ -48,6 +48,12 @@ DIRECT = FrontEnd()
 # 180 k / 220 k bias divider and 1 M input resistor, LM358 follower.
 # -15 V -> about 0.30 V, 0 V -> 1.65 V, +15 V -> about 3.00 V.
 CIRCUITSCOPE = FrontEnd(bias_v=1.65, gain=0.09)
+# The bi-directional CURRENT sense circuit (Current Sensing System Design v4): a 1 ohm shunt
+# read by a gain-47 subtractor around a 1.75 V bias, so
+#     V_out = 1.75 V + 0.047 V/mA * I        (design values; the real bias depends on the USB rail)
+# Here the "input" is in MILLIAMPS, so gain is volts per mA and the calibration gives mA.
+# Range with a 3.3 V converter: about -37 mA to +33 mA.
+CURRENT_SENSE = FrontEnd(bias_v=1.75, gain=0.047)
 
 
 @dataclass
@@ -69,16 +75,16 @@ class Calibration:
 
     @classmethod
     def fit_two_point(cls, counts_low: float, volts_low: float,
-                      counts_high: float, volts_high: float) -> "Calibration":
+                      counts_high: float, volts_high: float, unit: str = "V") -> "Calibration":
         """
         Calibration from two known points (straight line through them).
         e.g. the box read 12 counts at a real 0.00 V and 3722 counts at a real 3.00 V.
         """
         if counts_high == counts_low:
-            raise ValueError("The two calibration readings are identical; use two different voltages.")
+            raise ValueError(f"Both calibration readings are {counts_low:g} counts, so no line can be fitted. Check that the high reference really is connected to the chosen input and is different from the low one.")
         slope = (volts_high - volts_low) / (counts_high - counts_low)
         if slope <= 0:
-            raise ValueError("A higher voltage must give a higher count.")
+            raise ValueError(f"The high reference ({volts_high:g} {unit}) read {counts_high:g} counts, which is not above the low reference ({volts_low:g} {unit}) at {counts_low:g} counts. Check that low and high are not swapped and the references are connected to the points you chose.")
         return cls(volts_per_count=slope, offset_v=volts_low - slope * counts_low)
 
     def counts_to_volts(self, counts) -> np.ndarray:
@@ -94,7 +100,7 @@ class Calibration:
 
 
 def check_plausible(cal: Calibration, ideal: Calibration, max_slope_error: float = 0.2,
-                    max_offset_v: float = 0.3) -> str | None:
+                    max_offset_v: float = 0.3, unit: str = "V") -> str | None:
     """
     Sanity-check a freshly fitted calibration against the ideal one.
     Returns None if it looks believable, otherwise a message explaining why not.
@@ -107,6 +113,8 @@ def check_plausible(cal: Calibration, ideal: Calibration, max_slope_error: float
         return (f"The fitted gain is {slope_error:.0%} away from ideal, which is more than a real "
                 f"box should be. Check the reference voltages and which channel they are on.")
     if offset_error_v > max_offset_v:
-        return (f"The fitted offset is {offset_error_v * 1000:.0f} mV from the design value, more than a real box should "
+        # (volts are shown in mV; other units, e.g. mA for the current channel, as they are)
+        shown = f"{offset_error_v * 1000:.0f} mV" if unit == "V" else f"{offset_error_v:.1f} {unit}"
+        return (f"The fitted offset is {shown} from the design value, more than a real box should "
                 f"have. Check the low reference is really connected to the chosen channel.")
     return None

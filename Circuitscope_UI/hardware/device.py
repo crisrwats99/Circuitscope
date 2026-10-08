@@ -19,10 +19,11 @@ from __future__ import annotations
 
 import numpy as np
 
+from core.channels import CURRENT_CHANNELS
 from core.models import MAX_WAVEFORM_POINTS, WaveformSpec
 from core.submission import WaveformCapture, format_uid
 from hardware import protocol
-from hardware.calibration import DIRECT, Calibration, FrontEnd
+from hardware.calibration import CURRENT_SENSE, DIRECT, Calibration, FrontEnd
 from hardware.protocol import DeviceError, DeviceTimeout, ProtocolError
 
 DEFAULT_BAUD = 115200
@@ -59,6 +60,10 @@ class SerialDevice:
         self.front_end = front_end              # the analogue circuit in front of the converter
         self.calibration = calibration          # None = use the ideal one once INFO is known
         self.ideal_calibration: Calibration | None = None   # the textbook one, kept so we can reset to it
+        # The current inputs (I1 ...) have their own analogue circuit, so each has its own
+        # calibration, in MILLIAMPS per count. None = not calibrated, use the ideal one.
+        self.current_calibrations: dict[str, Calibration] = {}
+        self.ideal_current_calibration: Calibration | None = None
         self.connected = False
         self.uid = ""                           # filled in by connect()
         self.max_points = MAX_WAVEFORM_POINTS   # replaced by the box's real limits in connect()
@@ -109,6 +114,7 @@ class SerialDevice:
         self.max_rate_hz = info["max_rate_hz"]
         self.adc_max = 2 ** info["adc_bits"] - 1
         self.ideal_calibration = Calibration.ideal(info["vref_v"], info["adc_bits"], self.front_end)
+        self.ideal_current_calibration = Calibration.ideal(info["vref_v"], info["adc_bits"], CURRENT_SENSE)
         if self.calibration is None:
             self.calibration = self.ideal_calibration
         self.uid = format_uid(*words)
@@ -186,6 +192,37 @@ class SerialDevice:
             raise DeviceError("The two probe points are the same, so there is nothing to measure.")
         (v_pos, v_neg), _rate = self.sample([probe_pos, probe_neg], rate_hz, num_points)
         return float(np.mean(v_pos) - np.mean(v_neg))
+
+    # --- current ---------------------------------------------------------------------
+
+    def current_calibration(self, channel: str) -> Calibration:
+        """The calibration (mA per count) in use for a current input: its own, else the ideal one."""
+        return self.current_calibrations.get(channel) or self.ideal_current_calibration
+
+    def current_range_ma(self, channel: str) -> tuple[float, float]:
+        """The lowest and highest current (mA) the converter can show before it clips."""
+        cal = self.current_calibration(channel)
+        low, high = cal.counts_to_volts([0, self.adc_max])        # (the "volts" of a current channel are mA)
+        return float(low), float(high)
+
+    def reset_current_calibration(self, channel: str) -> None:
+        self.current_calibrations.pop(channel, None)
+
+    def measure_current(self, channel: str, num_points: int = 200, rate_hz: float = 20_000) -> float:
+        """
+        The current (mA) flowing through a current input, positive one way and negative the other.
+        The average of `num_points` samples is used. If any sample hits the end of the converter's
+        range the current is too large to measure, and the reading is refused rather than guessed.
+        """
+        self._require_connection()
+        if channel not in CURRENT_CHANNELS:
+            raise DeviceError(f"'{channel}' is not a current input (the box has: {', '.join(CURRENT_CHANNELS)}).")
+        (counts,), _rate = self.sample_counts([channel], rate_hz, num_points)
+        if counts.min() <= 0 or counts.max() >= self.adc_max:
+            low, high = self.current_range_ma(channel)
+            raise DeviceError(f"The current on {channel} is outside what the box can measure "
+                              f"({low:.0f} to {high:.0f} mA). Reduce the current and try again.")
+        return float(self.current_calibration(channel).counts_to_volts(np.mean(counts)))
 
     def capture_waveform(self, spec: WaveformSpec) -> WaveformCapture:
         """Capture the raw samples a waveform item asks for (signal, plus reference if needed)."""

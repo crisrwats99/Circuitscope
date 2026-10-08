@@ -21,8 +21,8 @@ def make_assessment() -> Assessment:
     fixed = Item(id="1A-1", description="V", marks=2, quantity=Quantity.VOLTAGE, probe_pos="P1",
                  probe_neg="P3", expected=3.3, tolerance=0.1)
     theory = Item(id="1A-2", description="Explain", marks=3, item_type=ItemType.THEORY)
-    current = Item(id="1A-3", description="I", marks=1, quantity=Quantity.CURRENT, probe_pos="P1",
-                   probe_neg="P3", expected=0.001, tolerance=0.0001)
+    current = Item(id="1A-3", description="I", marks=1, quantity=Quantity.CURRENT, probe_pos="I1",
+                   expected=4.7, tolerance=0.2)
     varying = Item(id="2A-1", description="Divider", marks=3, mode=AnswerMode.VARYING,
                    quantity=Quantity.VOLTAGE, probe_pos="P2", probe_neg="P3",
                    expected_formula="Vs * R2 / (R1 + R2)", tolerance=0.1)
@@ -47,6 +47,7 @@ def sine_capture(freq=1000.0) -> WaveformCapture:
 def finished_session(mode=Mode.FORMAL) -> StudentSession:
     s = StudentSession(make_assessment(), mode, "SMTCHR001", UID)
     s.record_measurement("1A-1", 3.31)
+    s.record_measurement("1A-3", 4.7)
     s.set_theory_answer("1A-2", "Because of the voltage divider rule")
     for name, value in (("Vs", 5.0), ("R1", 1000.0), ("R2", 1000.0)):
         s.set_variable("2", name, value)
@@ -61,7 +62,7 @@ def test_item_kinds():
     s = StudentSession(make_assessment())
     assert s.kind("1A-1") == ItemKind.MEASURE
     assert s.kind("1A-2") == ItemKind.THEORY
-    assert s.kind("1A-3") == ItemKind.UNSUPPORTED
+    assert s.kind("1A-3") == ItemKind.MEASURE      # a current is measured like anything else (in mA)
     assert s.kind("2A-1") == ItemKind.MEASURE      # varying is still one measured number
     assert s.kind("3A-1") == ItemKind.WAVEFORM
 
@@ -80,15 +81,15 @@ def test_variables_needed_and_missing():
     assert s.missing_variables("2A-1") == ["R2", "Vs"]
 
 
-def test_states_and_progress_ignore_unsupported():
+def test_states_and_progress():
     s = StudentSession(make_assessment())
-    assert s.state("1A-3") == ItemState.UNSUPPORTED
-    assert s.progress() == (0, 4)                       # 5 items, current not counted
+    assert s.state("1A-3") == ItemState.TODO
+    assert s.progress() == (0, 5)
     s.record_measurement("1A-1", 3.3)
     s.set_theory_answer("1A-2", "   ")                  # blank text is not an answer
     assert s.state("1A-1") == ItemState.DONE
     assert s.state("1A-2") == ItemState.TODO
-    assert s.progress() == (1, 4)
+    assert s.progress() == (1, 5)
 
 
 # ---------- recording ----------
@@ -97,8 +98,6 @@ def test_wrong_kind_of_data_is_refused_with_a_reason():
     s = StudentSession(make_assessment())
     with pytest.raises(SessionError, match="not a voltage measurement"):
         s.record_measurement("1A-2", 1.0)
-    with pytest.raises(SessionError, match="not a voltage measurement"):
-        s.record_measurement("1A-3", 1.0)               # current: unsupported
     with pytest.raises(SessionError, match="not a waveform item"):
         s.record_waveform("1A-1", sine_capture())
     with pytest.raises(SessionError, match="not a theory item"):
@@ -144,7 +143,7 @@ def test_cannot_submit_until_everything_is_done():
     assert "Item 1A-1: measure it." in problems
     assert "Item 1A-2: type an answer." in problems
     assert "Item 3A-1: capture the waveform." in problems
-    assert not any("1A-3" in p for p in problems)       # unsupported never blocks
+    assert "Item 1A-3: measure it." in problems          # the current item must be done too
     with pytest.raises(SessionError, match="cannot be submitted yet"):
         s.to_submission()
 
@@ -167,7 +166,7 @@ def test_finished_work_becomes_a_submission_that_signs_loads_and_grades(tmp_path
     assert loaded.theory_answers == sub.theory_answers          # typed text survives signing
     assert check_matches(s.assessment, loaded) == []
     report = grade_submission(s.assessment, loaded, {"1A-2": True})
-    assert report.total == pytest.approx(2 + 3 + 3 + 2)         # current item (1 mark) not answered
+    assert report.total == pytest.approx(2 + 3 + 3 + 2 + 1)     # fixed, theory, divider, waveform, current
     assert report.total_available == 11
 
 

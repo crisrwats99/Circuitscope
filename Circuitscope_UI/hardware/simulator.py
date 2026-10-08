@@ -28,7 +28,8 @@ from typing import Callable
 import numpy as np
 
 from hardware import protocol
-from hardware.calibration import DIRECT, FrontEnd
+from core.channels import CURRENT_CHANNELS, VOLTAGE_CHANNELS
+from hardware.calibration import CURRENT_SENSE, DIRECT, FrontEnd
 
 TIMER_CLOCK_HZ = 170_000_000      # the G431 timer clock: sample rates are TIMER_CLOCK / whole number
 
@@ -52,12 +53,16 @@ class SimulatedBoard:
         self.protocol_version = protocol_version or protocol.PROTOCOL_VERSION
         self._rng = np.random.default_rng(seed)     # fixed seed -> same noise every run
         self._signals: dict[str, float | Callable] = {}
-        self.known_channels = {"P0", "P1", "P2", "P3", "P4", "P5"}
+        # The inputs the board answers to. The current inputs have their own analogue circuit
+        # (a signal on I1 is in MILLIAMPS), so each channel can have its own front end.
+        # I2 is accepted too, so the second current input can be tried before it is wired.
+        self.known_channels = set(VOLTAGE_CHANNELS) | set(CURRENT_CHANNELS) | {"I2"}
+        self.channel_front_ends: dict[str, FrontEnd] = {"I1": CURRENT_SENSE, "I2": CURRENT_SENSE}
 
     # --- tell the board what is connected to each test point ---------------
 
     def set_dc(self, channel: str, volts: float) -> None:
-        """A steady voltage on a test point."""
+        """A steady voltage on a test point (or, for a current input such as I1, a steady current in mA)."""
         self._signals[channel] = float(volts)
 
     def set_wave(self, channel: str, function: Callable[[np.ndarray], np.ndarray]) -> None:
@@ -112,7 +117,8 @@ class SimulatedBoard:
             signal = self._signals.get(ch, 0.0)               # unconnected point reads 0 V
             volts = signal(t) if callable(signal) else np.full(count, signal)
             # input volts -> front end -> voltage at the converter pin -> imperfect converter
-            volts = self.front_end.to_pin(volts) * self.adc_gain + self.adc_offset_v
+            front_end = self.channel_front_ends.get(ch, self.front_end)
+            volts = front_end.to_pin(volts) * self.adc_gain + self.adc_offset_v
             if self.noise_v:
                 volts = volts + self._rng.normal(0.0, self.noise_v, count)
             # The converter can only see 0..vref and only whole counts.

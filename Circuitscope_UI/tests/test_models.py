@@ -34,7 +34,7 @@ def sample_assessment() -> Assessment:
                             Variable(name="Vs", label="Supply", unit="V",
                                      source=VariableSource.MEASURED,
                                      quantity=Quantity.VOLTAGE,
-                                     probe_pos="P0", probe_neg="P3")],
+                                     probe_pos="P5", probe_neg="P3")],
                  parts=[Part(id="2A", title="m", items=[varying])]),
         Question(id="3", title="Wave", parts=[Part(id="3A", title="m", items=[wave])]),
     ])

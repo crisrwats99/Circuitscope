@@ -18,8 +18,8 @@ What each kind of item needs from the student:
     variables (R1, Vs ...)          typed in, or measured, before a 'varying' item
                                     can be graded
 
-Current measurement is not built yet, so a Current item is reported as
-"unsupported" and does not stop the student from finishing the rest.
+A current item is measured at one of the box's current inputs (I1 ...) and is, for the
+student, just another measurement (the reading is in mA).
 
 AUTOSAVE: save_progress() / load_progress() write a small JSON file so a student
 whose computer crashes can carry on. It is NOT signed (it is only a draft); the
@@ -34,7 +34,7 @@ from enum import Enum
 
 from core.formulas import FormulaError, formula_variables
 from core.grading import GradeReport, StudentAnswers, grade_assessment
-from core.models import Assessment, AnswerMode, ItemType, Quantity
+from core.models import Assessment, AnswerMode, ItemType
 from core.submission import (Submission, WaveformCapture,
                              MAX_STUDENT_NUMBER_LENGTH)
 
@@ -52,7 +52,7 @@ class ItemKind(str, Enum):
     MEASURE = "measure"          # read a voltage with the box
     WAVEFORM = "waveform"        # capture a waveform with the box
     THEORY = "theory"            # type an answer
-    UNSUPPORTED = "unsupported"  # cannot be done yet (current measurement)
+    UNSUPPORTED = "unsupported"  # reserved for items the app cannot do (none at the moment)
 
 
 class ItemState(str, Enum):
@@ -89,8 +89,6 @@ class StudentSession:
         question, item = self._item(item_id)
         if item.item_type == ItemType.THEORY:
             return ItemKind.THEORY
-        if item.quantity == Quantity.CURRENT:
-            return ItemKind.UNSUPPORTED
         if question.mode_for(item) == AnswerMode.WAVEFORM:
             return ItemKind.WAVEFORM
         return ItemKind.MEASURE

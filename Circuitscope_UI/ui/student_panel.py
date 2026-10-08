@@ -29,7 +29,7 @@ from PySide6.QtWidgets import (QComboBox, QFileDialog, QFormLayout, QGroupBox, Q
                                QLineEdit, QPlainTextEdit, QPushButton, QScrollArea, QSplitter,
                                QStackedWidget, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget)
 
-from core.models import Assessment, VariableSource
+from core.models import Assessment, Quantity, VariableSource
 from core.session import ItemKind, ItemState, Mode, SessionError, StudentSession
 from core.submission import SubmissionError, save_submission
 from ui.assessment_editor import describe_load_error, parse_number
@@ -131,8 +131,8 @@ class StudentPanel(QWidget):
         l2 = QVBoxLayout(page2)
         l2.addWidget(self.answer_edit)
         # page 3: unsupported
-        self.unsupported_label = QLabel("Current measurement is not available in this version of the "
-                                        "app, so this item is skipped. It does not stop you submitting.")
+        self.unsupported_label = QLabel("This item cannot be done with this version of the app, so it is "
+                                        "skipped. It does not stop you submitting.")
         self.unsupported_label.setWordWrap(True)
         page3 = QWidget()
         QVBoxLayout(page3).addWidget(self.unsupported_label)
@@ -353,8 +353,12 @@ class StudentPanel(QWidget):
         self.variable_message.setText("")
         self._build_variable_rows(question, item)
         if kind == ItemKind.MEASURE:
-            self.probe_hint.setText(f"Connect the red probe to {item.probe_pos} and the black probe to "
-                                    f"{item.probe_neg}, then press Measure.")
+            if item.quantity == Quantity.CURRENT:
+                self.probe_hint.setText(f"Connect your circuit through the {item.probe_pos} current input, "
+                                        f"in series, then press Measure.")
+            else:
+                self.probe_hint.setText(f"Connect the red probe to {item.probe_pos} and the black probe to "
+                                        f"{item.probe_neg}, then press Measure.")
         elif kind == ItemKind.WAVEFORM:
             spec = item.waveform
             ref = f" and the reference to {spec.channel_ref}" if spec.channel_ref else ""
@@ -382,11 +386,13 @@ class StudentPanel(QWidget):
             if variable.source == VariableSource.MEASURED:
                 text = f"Measure {name}" if current is None else f"{name} = {current:.4g}  (measure again)"
                 button = QPushButton(text)
-                button.setToolTip(f"Red probe on {variable.probe_pos}, black probe on {variable.probe_neg}.")
+                where = (f"in series through the {variable.probe_pos} current input"
+                         if variable.quantity == Quantity.CURRENT
+                         else f"red on {variable.probe_pos}, black on {variable.probe_neg}")
+                button.setToolTip(where)
                 button.clicked.connect(lambda _=False, q=question.id, v=variable: self._measure_variable(q, v))
                 button.setEnabled(self.device is not None and not self._busy)
-                self.variables_form.addRow(f"{variable.label}{unit}: red on {variable.probe_pos}, "
-                                           f"black on {variable.probe_neg}", button)
+                self.variables_form.addRow(f"{variable.label}{unit}: {where}", button)
                 self._var_widgets[name] = button
             else:
                 edit = QLineEdit("" if current is None else f"{current:g}")
@@ -441,22 +447,35 @@ class StudentPanel(QWidget):
             self.autosave()
             if self.current_item:                    # redraw the rows so the button shows the new value
                 self._show_item(self.current_item)
-        self._run(self.device.measure_voltage, variable.probe_pos, variable.probe_neg, on_result=done)
+        if variable.quantity == Quantity.CURRENT:
+            self._run(self.device.measure_current, variable.probe_pos, on_result=done)
+        else:
+            self._run(self.device.measure_voltage, variable.probe_pos, variable.probe_neg, on_result=done)
 
     def _measure_clicked(self) -> None:
         item_id = self.current_item
         _q, item = self._find(item_id)
 
-        def done(volts: float) -> None:
+        unit = self._unit(item)
+
+        def done(value: float) -> None:
             try:
-                self.session.record_measurement(item_id, volts)
+                self.session.record_measurement(item_id, value)
             except SessionError as exc:
                 self._say(str(exc), error=True)
                 return
             self.autosave()
-            self._say(f"Recorded {volts:.3f} V for item {item_id}.")
+            self._say(f"Recorded {value:.3f} {unit} for item {item_id}.")
             self._refresh()
-        self._run(self.device.measure_voltage, item.probe_pos, item.probe_neg, on_result=done)
+        if item.quantity == Quantity.CURRENT:
+            self._run(self.device.measure_current, item.probe_pos, on_result=done)
+        else:
+            self._run(self.device.measure_voltage, item.probe_pos, item.probe_neg, on_result=done)
+
+    @staticmethod
+    def _unit(item) -> str:
+        """Voltages are shown in V, currents in mA."""
+        return "mA" if item.quantity == Quantity.CURRENT else "V"
 
     def _capture_clicked(self) -> None:
         item_id = self.current_item
@@ -597,7 +616,8 @@ class StudentPanel(QWidget):
         kind = s.kind(item_id)
         if kind == ItemKind.MEASURE:
             value = s.measurements.get(item_id)
-            self.reading_label.setText("-" if value is None else f"{value:.3f} V")
+            unit = self._unit(self._find(item_id)[1])
+            self.reading_label.setText("-" if value is None else f"{value:.3f} {unit}")
         elif kind == ItemKind.WAVEFORM:
             capture = s.waveforms.get(item_id)
             if capture is None:

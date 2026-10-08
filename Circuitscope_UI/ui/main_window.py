@@ -8,12 +8,13 @@ student view and the tutor grading screen (probably as tabs).
 
 from __future__ import annotations
 
-from PySide6.QtWidgets import QHBoxLayout, QMainWindow, QTabWidget, QWidget
+from PySide6.QtWidgets import QHBoxLayout, QMainWindow, QTabWidget, QVBoxLayout, QWidget
 
 from ui.assessment_editor import AssessmentEditor
 from ui.calibration_panel import CalibrationPanel
+from ui.current_calibration_panel import CurrentCalibrationPanel
 from ui.connection_panel import ConnectionPanel
-from ui.quick_measure import QuickMeasurePanel
+from ui.quick_measure import QuickCurrentPanel, QuickMeasurePanel
 from ui.student_panel import StudentPanel
 from ui.tutor_panel import TutorPanel
 from ui.waveform_panel import WaveformPanel
@@ -32,7 +33,9 @@ class MainWindow(QMainWindow):
         self.student = StudentPanel(progress_folder=progress_folder)
         self.tutor = TutorPanel(marking_folder=marking_folder)
         self.quick = QuickMeasurePanel()
+        self.quick_current = QuickCurrentPanel()
         self.calibration = CalibrationPanel(folder=calibration_folder)
+        self.current_calibration = CurrentCalibrationPanel(folder=calibration_folder)
         self.waveform = WaveformPanel()
 
         # The tools sit on tabs to the right of the connection panel.
@@ -40,9 +43,9 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self.creator, "Assessment creator")
         self.tabs.addTab(self.student, "Student")
         self.tabs.addTab(self.tutor, "Tutor grading")
-        self.tabs.addTab(self.quick, "Quick measure")
+        self.tabs.addTab(self._stack(self.quick, self.quick_current), "Quick measure")
         self.tabs.addTab(self.waveform, "Waveform")
-        self.tabs.addTab(self.calibration, "Calibration")
+        self.tabs.addTab(self._stack(self.calibration, self.current_calibration), "Calibration")
 
         central = QWidget()
         row = QHBoxLayout(central)
@@ -59,13 +62,25 @@ class MainWindow(QMainWindow):
         # When the connection changes, tell the other panels and update the title.
         self.connection.device_changed.connect(self._device_changed)
 
+    @staticmethod
+    def _stack(*panels) -> QWidget:
+        """Several panels one above the other on one tab (voltage tools, then current tools)."""
+        page = QWidget()
+        column = QVBoxLayout(page)
+        for panel in panels:
+            column.addWidget(panel)
+        column.addStretch(1)
+        return page
+
     def _tab_changed(self, index: int) -> None:
         # These two tabs work on files only, so the box's connection panel is not needed.
         self.connection.setVisible(self.tabs.widget(index) not in (self.creator, self.tutor))
 
     def _device_changed(self, device) -> None:
         self.calibration.set_device(device)      # first: loads the box's saved calibration
+        self.current_calibration.set_device(device)
         self.quick.set_device(device)
+        self.quick_current.set_device(device)
         self.student.set_device(device)
         self.waveform.set_device(device)
         if device is None:

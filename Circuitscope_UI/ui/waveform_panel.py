@@ -24,9 +24,10 @@ from PySide6.QtWidgets import (QComboBox, QFileDialog, QFormLayout, QGroupBox, Q
 from core.export import write_waveform_csv
 from core.models import MAX_WAVEFORM_POINTS, WaveformFeature, WaveformSpec
 from core.waveform import compute_all, format_feature
+from core.channels import VOLTAGE_CHANNELS
 from ui.background import run_in_background
 
-CHANNELS = ["P0", "P1", "P2", "P3", "P4", "P5"]
+CHANNELS = VOLTAGE_CHANNELS            # the box's voltage test points (see core/channels.py)
 NO_REFERENCE = "None"
 
 # Trace colours, used on the plot AND on the matching labels, so you can tell at a glance

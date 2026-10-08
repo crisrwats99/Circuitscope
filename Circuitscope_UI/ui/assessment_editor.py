@@ -40,11 +40,11 @@ from PySide6.QtWidgets import (QAbstractItemView, QComboBox, QDoubleSpinBox, QFi
                                QTreeWidgetItem, QVBoxLayout, QWidget)
 
 from ui.image_picker import ImagePicker, PromptEdit
+from core.channels import CURRENT_CHANNELS, VOLTAGE_CHANNELS
 from core.models import (TWO_CHANNEL_FEATURES, AnswerMode, Assessment, Item, ItemType, Part,
                          Quantity, Question, ScoringMode, ToleranceMode, Variable,
                          VariableSource, WaveformFeature, WaveformSpec)
 
-CHANNELS = ["P0", "P1", "P2", "P3", "P4", "P5"]      # the box's test points
 RED = "color: #b00020;"
 
 # Page numbers of the right-hand stack.
@@ -74,9 +74,24 @@ def _channel_combo(allow_none: bool = False) -> QComboBox:
     box = QComboBox()
     if allow_none:
         box.addItem("(none)", None)
-    for ch in CHANNELS:
+    for ch in VOLTAGE_CHANNELS:
         box.addItem(ch, ch)
     return box
+
+
+def _fill_channel_box(box: QComboBox, current: bool, allow_none: bool = False) -> None:
+    """
+    Fill a probe drop-down with the voltage test points (P1 ...) or, for a current
+    measurement, the current inputs (I1 ...). Sends no change signal.
+    """
+    box.blockSignals(True)
+    box.clear()
+    if allow_none and not current:
+        box.addItem("(none)", None)
+    for ch in (CURRENT_CHANNELS if current else VOLTAGE_CHANNELS):
+        box.addItem(ch, ch)
+    box.setCurrentIndex(0)
+    box.blockSignals(False)
 
 
 def parse_number(text: str) -> tuple[float | None, str | None]:
@@ -331,6 +346,7 @@ class AssessmentEditor(QWidget):
         self.i_quantity_box = _combo([("Voltage", Quantity.VOLTAGE.value), ("Current", Quantity.CURRENT.value)])
         self.i_pos_box = _channel_combo(allow_none=True)
         self.i_neg_box = _channel_combo(allow_none=True)
+        self._pos_is_current = False           # which list the + probe box currently holds
         self.i_expected_edit = QLineEdit()
         self.i_expected_edit.setPlaceholderText("a number, e.g. 3.3")
         self.i_expected_msg = QLabel("")               # why the typed expected value is not usable
@@ -363,7 +379,7 @@ class AssessmentEditor(QWidget):
         form.addRow("Item type:", self.i_type_box)
         form.addRow("Answer type:", self.i_mode_box)
         form.addRow("Measures:", self.i_quantity_box)
-        form.addRow("Probe + (red):", self.i_pos_box)
+        form.addRow("Probe + (red):", self.i_pos_box)         # relabelled "Current input:" for currents
         form.addRow("Probe - (black):", self.i_neg_box)
         form.addRow("Expected value:", self.i_expected_edit)
         form.addRow("", self.i_expected_msg)
@@ -550,7 +566,8 @@ class AssessmentEditor(QWidget):
 
         self.i_quantity_box.setCurrentIndex(
             self.i_quantity_box.findData(item.quantity.value if item.quantity else Quantity.VOLTAGE.value))
-        self.i_pos_box.setCurrentIndex(self.i_pos_box.findData(item.probe_pos))
+        self._sync_probe_choices(item.quantity == Quantity.CURRENT)
+        self.i_pos_box.setCurrentIndex(max(0, self.i_pos_box.findData(item.probe_pos)))
         self.i_neg_box.setCurrentIndex(self.i_neg_box.findData(item.probe_neg))
         self.i_prompt_edit.setPlainText(item.prompt)
         self.i_image.set_image_b64(item.image)
@@ -581,6 +598,14 @@ class AssessmentEditor(QWidget):
         self.w_points_spin.setValue(wf.num_points)
         self._refresh_item_visibility(item, question)
 
+    def _sync_probe_choices(self, current: bool) -> bool:
+        """Make the + probe box list current inputs (for a current item) or voltage test points. True if it changed."""
+        if current == self._pos_is_current:
+            return False
+        _fill_channel_box(self.i_pos_box, current, allow_none=True)
+        self._pos_is_current = current
+        return True
+
     def _refresh_item_visibility(self, item: Item, question: Question) -> None:
         """Show only the fields that apply to this kind of item."""
         theory = item.item_type == ItemType.THEORY
@@ -590,7 +615,7 @@ class AssessmentEditor(QWidget):
             self.i_mode_box: measured,
             self.i_quantity_box: measured and mode != AnswerMode.WAVEFORM,
             self.i_pos_box: measured and mode != AnswerMode.WAVEFORM,
-            self.i_neg_box: measured and mode != AnswerMode.WAVEFORM,
+            self.i_neg_box: measured and mode != AnswerMode.WAVEFORM and item.quantity != Quantity.CURRENT,
             self.i_expected_edit: measured and mode in (AnswerMode.SINGLE, AnswerMode.WAVEFORM),
             self.i_expected_msg: measured and mode in (AnswerMode.SINGLE, AnswerMode.WAVEFORM),
             self.i_formula_edit: measured and mode in (AnswerMode.VARYING, AnswerMode.WAVEFORM),
@@ -604,6 +629,11 @@ class AssessmentEditor(QWidget):
         self.wave_group.setVisible(measured and mode == AnswerMode.WAVEFORM)
         feature = WaveformFeature(self.w_feature_box.currentData())
         self.wave_form.setRowVisible(self.w_ref_box, feature in TWO_CHANNEL_FEATURES)
+        current = item.quantity == Quantity.CURRENT
+        label = self.item_form.labelForField(self.i_pos_box)
+        if label is not None:
+            label.setText("Current input:" if current else "Probe + (red):")
+        self.i_expected_edit.setPlaceholderText("a number in mA, e.g. 4.7" if current else "a number in volts, e.g. 3.3")
         names = ", ".join(v.name for v in question.variables) or "none defined yet"
         self.i_vars_label.setText(f"Variables you can use: {names}   (also pi, e, sqrt, sin ...)")
         self.i_tol_spin.setSuffix(" %" if self.i_tol_mode_box.currentData() == "percent" else "")
@@ -621,8 +651,9 @@ class AssessmentEditor(QWidget):
         mode_text = self.i_mode_box.currentData()
         item.mode = AnswerMode(mode_text) if mode_text else None
         item.quantity = Quantity(self.i_quantity_box.currentData())
+        self._sync_probe_choices(item.quantity == Quantity.CURRENT)   # P1.. for voltage, I1 for current
         item.probe_pos = self.i_pos_box.currentData()
-        item.probe_neg = self.i_neg_box.currentData()
+        item.probe_neg = None if item.quantity == Quantity.CURRENT else self.i_neg_box.currentData()
         item.tolerance_mode = ToleranceMode(self.i_tol_mode_box.currentData())
         item.tolerance = self.i_tol_spin.value()
 
@@ -736,8 +767,10 @@ class AssessmentEditor(QWidget):
         source.setCurrentIndex(source.findData(v.source.value))
         quantity = _combo([("Voltage", Quantity.VOLTAGE.value), ("Current", Quantity.CURRENT.value)])
         quantity.setCurrentIndex(quantity.findData(v.quantity.value if v.quantity else Quantity.VOLTAGE.value))
+        is_current = v.quantity == Quantity.CURRENT
         pos, neg = _channel_combo(), _channel_combo()
-        pos.setCurrentIndex(pos.findData(v.probe_pos or "P1"))
+        _fill_channel_box(pos, is_current)
+        pos.setCurrentIndex(max(0, pos.findData(v.probe_pos or ("I1" if is_current else "P1"))))
         neg.setCurrentIndex(neg.findData(v.probe_neg or "P3"))
         for col, widget in enumerate((name, label, unit, source, quantity, pos, neg)):
             self.var_table.setCellWidget(row, col, widget)
@@ -750,8 +783,13 @@ class AssessmentEditor(QWidget):
     def _sync_variable_row_enabled(self, row: int) -> None:
         """The measuring columns only matter for a variable the box measures."""
         measured = self.var_table.cellWidget(row, 3).currentData() == VariableSource.MEASURED.value
-        for col in (4, 5, 6):
+        current = self.var_table.cellWidget(row, 4).currentData() == Quantity.CURRENT.value
+        pos = self.var_table.cellWidget(row, 5)
+        if (pos.findData(CURRENT_CHANNELS[0]) >= 0) != current:       # the list does not match the quantity
+            _fill_channel_box(pos, current)
+        for col in (4, 5):
             self.var_table.cellWidget(row, col).setEnabled(measured)
+        self.var_table.cellWidget(row, 6).setEnabled(measured and not current)   # a current has no - probe
 
     def _apply_variables(self, *_args) -> None:
         """Copy the whole table into the question's variable list."""
@@ -768,7 +806,7 @@ class AssessmentEditor(QWidget):
                 source=VariableSource(cell(3).currentData()),
                 quantity=Quantity(cell(4).currentData()) if measured else None,
                 probe_pos=cell(5).currentData() if measured else None,
-                probe_neg=cell(6).currentData() if measured else None))
+                probe_neg=cell(6).currentData() if measured and cell(4).currentData() != Quantity.CURRENT.value else None))
         question.variables = variables
         self._touch()
 

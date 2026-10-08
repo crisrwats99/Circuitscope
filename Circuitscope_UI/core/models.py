@@ -36,6 +36,7 @@ from dataclasses import dataclass, field, asdict    # tools for building data cl
 from enum import Enum                               # fixed lists of allowed choices
 from typing import Iterator                         # type hint for generator functions
 
+from core.channels import CURRENT_CHANNELS, VOLTAGE_CHANNELS, voltage_range_text
 from core.formulas import CONSTANTS, FUNCTIONS, check_formula   # formula checking (Stage 6)
 
 # Version 3 added question text, model answers and images (version 1 and 2 files still load).
@@ -95,7 +96,7 @@ class ScoringMode(str, Enum):
 
 class Quantity(str, Enum):
     VOLTAGE = "voltage"          # measured in volts
-    CURRENT = "current"          # measured in amps
+    CURRENT = "current"          # measured in milliamps (mA)
 
 
 class ToleranceMode(str, Enum):
@@ -405,6 +406,12 @@ class Assessment:
                     problems.append(f"{qname}: the variable name '{v.name}' is reserved for the formula "
                                     f"language (pi, e, sqrt, ...). Choose another name.")
                 if v.source == VariableSource.MEASURED:
+                    if v.quantity == Quantity.CURRENT:
+                        # A current is read at one current input (I1 ...); there is no second probe.
+                        if v.probe_pos not in CURRENT_CHANNELS:
+                            problems.append(f"{qname}: the measured variable '{v.name}' is a current, so choose "
+                                            f"which current input measures it ({', '.join(CURRENT_CHANNELS)}).")
+                        continue
                     missing = [what for what, value in (("a quantity (voltage or current)", v.quantity),
                                                         ("a + probe point", v.probe_pos),
                                                         ("a - probe point", v.probe_neg)) if not value]
@@ -414,6 +421,11 @@ class Assessment:
                     elif v.probe_pos == v.probe_neg:
                         problems.append(f"{qname}: the measured variable '{v.name}' has both probes on "
                                         f"{v.probe_pos}, so it would always read 0. Choose two different points.")
+                    else:
+                        for probe in (v.probe_pos, v.probe_neg):
+                            if probe not in VOLTAGE_CHANNELS:
+                                problems.append(f"{qname}: the measured variable '{v.name}' uses '{probe}', which is "
+                                                f"not a voltage test point on the box ({voltage_range_text()}).")
 
             # --- item checks ---
             for part in question.parts:
@@ -452,15 +464,25 @@ class Assessment:
                     if mode in (AnswerMode.SINGLE, AnswerMode.VARYING):
                         if not item.quantity:
                             problems.append(f"{where}: choose whether it measures voltage or current.")
-                        if not item.probe_pos:
-                            problems.append(f"{where}: the + probe point is not chosen. Pick a test point "
-                                            f"(P0 to P5) for 'Probe + (red)'.")
-                        if not item.probe_neg:
-                            problems.append(f"{where}: the - probe point is not chosen. Pick a test point "
-                                            f"(P0 to P5) for 'Probe - (black)'.")
-                        if item.probe_pos and item.probe_pos == item.probe_neg:
-                            problems.append(f"{where}: both probes are on {item.probe_pos}, so the reading "
-                                            f"would always be 0. Choose two different test points.")
+                        elif item.quantity == Quantity.CURRENT:
+                            # A current is read at one current input; there are no probe points.
+                            if item.probe_pos not in CURRENT_CHANNELS:
+                                problems.append(f"{where}: choose which current input measures it "
+                                                f"({', '.join(CURRENT_CHANNELS)}).")
+                        else:
+                            if not item.probe_pos:
+                                problems.append(f"{where}: the + probe point is not chosen. Pick a test point "
+                                                f"({voltage_range_text()}) for 'Probe + (red)'.")
+                            if not item.probe_neg:
+                                problems.append(f"{where}: the - probe point is not chosen. Pick a test point "
+                                                f"({voltage_range_text()}) for 'Probe - (black)'.")
+                            if item.probe_pos and item.probe_pos == item.probe_neg:
+                                problems.append(f"{where}: both probes are on {item.probe_pos}, so the reading "
+                                                f"would always be 0. Choose two different test points.")
+                            for probe in (item.probe_pos, item.probe_neg):
+                                if probe and probe not in VOLTAGE_CHANNELS:
+                                    problems.append(f"{where}: '{probe}' is not a voltage test point on the box "
+                                                    f"({voltage_range_text()}).")
 
                     # Check the formula text itself (syntax, unsafe parts, unknown
                     # variables) using the same parser the grader will use.

@@ -403,7 +403,7 @@ def test_the_connection_panel_is_hidden_only_on_the_creator_tab(qapp, tmp_path):
     qapp.processEvents()
     assert window.tabs.currentWidget() is window.creator
     assert not window.connection.isVisible()
-    window.tabs.setCurrentWidget(window.quick)
+    window.tabs.setCurrentWidget(window.quick.parentWidget())      # (the quick-measure tab holds two panels)
     assert window.connection.isVisible()
     window.tabs.setCurrentWidget(window.creator)
     assert not window.connection.isVisible()

@@ -48,7 +48,7 @@ def make_assessment(with_picture=False) -> Assessment:
                  probe_pos="P1", probe_neg="P3", expected=3.0, tolerance=0.1, prompt="Measure the supply.")
     theory = Item(id="1A-2", description="Explain", marks=3, item_type=ItemType.THEORY, prompt="Why?")
     current = Item(id="1A-3", description="Current", marks=1, quantity=Quantity.CURRENT,
-                   probe_pos="P1", probe_neg="P3", expected=0.001, tolerance=0.0001)
+                   probe_pos="I1", expected=4.7, tolerance=0.2)
     varying = Item(id="2A-1", description="Divider", marks=3, mode=AnswerMode.VARYING,
                    quantity=Quantity.VOLTAGE, probe_pos="P2", probe_neg="P3",
                    expected_formula="Vs * R2 / (R1 + R2)", tolerance=0.1)
@@ -97,6 +97,7 @@ def do_everything(panel):
     """Finish every doable item of the test assessment."""
     panel.number_edit.setText("SMTCHR001")
     panel.select_item("1A-1"); measure_current(panel)
+    panel.select_item("1A-3"); measure_current(panel)
     panel.select_item("1A-2"); panel.answer_edit.setPlainText("Voltage divider rule.")
     panel.select_item("2A-1")
     panel._var_widgets["R1"].setText("1500"); panel._var_widgets["R1"].editingFinished.emit()
@@ -143,8 +144,8 @@ def test_opening_shows_the_items(qapp, tmp_path, files):
     assert panel.title_label.text() == "Practical 1"
     assert set(panel._tree_items) == {"1A-1", "1A-2", "1A-3", "2A-1", "3A-1"}
     assert panel._tree_items["1A-1"].text(0).startswith("○ 1A-1")      # not done yet
-    assert panel._tree_items["1A-3"].text(0).startswith("⊘ 1A-3")      # unsupported
-    assert panel.progress_label.text() == "Progress: 0 of 4 items done"
+    assert panel._tree_items["1A-3"].text(0).startswith("\u25cb 1A-3")      # the current item is a normal item now
+    assert panel.progress_label.text() == "Progress: 0 of 5 items done"
     assert not panel.submit_button.isEnabled()
 
 
@@ -160,7 +161,7 @@ def test_measuring_records_the_reading_and_shows_feedback(qapp, tmp_path, files)
     assert panel.session.measurements["1A-1"] == pytest.approx(3.0, abs=0.01)
     assert panel._tree_items["1A-1"].text(0).startswith("✔")
     assert panel.feedback_label.text().startswith("Correct: 2 / 2 marks")
-    assert panel.marks_label.text().startswith("Marks so far: 2 / 10")      # the current item (1 mark) is left out
+    assert panel.marks_label.text().startswith("Marks so far: 2 / 11")
 
 
 def test_without_a_box_measuring_is_blocked(qapp, tmp_path, files):
@@ -207,12 +208,27 @@ def test_theory_answer_is_saved_as_typed(qapp, tmp_path, files):
     assert panel.answer_edit.toPlainText() == "Because of Ohm's law"
 
 
-def test_current_item_is_skipped_with_an_explanation(qapp, tmp_path, files):
+def test_a_current_item_is_measured_through_the_current_input_and_shown_in_ma(qapp, tmp_path, files):
     panel = new_panel(tmp_path)
     panel.open_assessment(files[1])
     panel.select_item("1A-3")
-    assert panel.pages.currentIndex() == 3
-    assert "not available" in panel.unsupported_label.text()
+    assert panel.pages.currentIndex() == 0
+    assert "through the I1 current input" in panel.probe_hint.text()
+    measure_current(panel)
+    assert panel.reading_label.text().endswith(" mA")
+    assert panel.session.measurements["1A-3"] == pytest.approx(4.7, abs=0.05)
+    assert "Recorded" in panel.message_label.text() and " mA " in panel.message_label.text()
+    assert panel.feedback_label.text().startswith("Correct: 1 / 1 marks")
+
+
+def test_a_current_too_big_to_measure_is_explained(qapp, tmp_path, files):
+    panel = new_panel(tmp_path)
+    panel.open_assessment(files[1])
+    panel.device.port.board._signals["I1"] = 90.0                           # far beyond the +/-35 mA range
+    panel.select_item("1A-3")
+    measure_current(panel)
+    assert "outside what the box can measure" in panel.message_label.text()
+    assert "1A-3" not in panel.session.measurements
 
 
 def test_waveform_capture_is_recorded_and_plotted(qapp, tmp_path, files):
@@ -281,7 +297,7 @@ def test_formal_mode_hides_marks_and_requires_everything(qapp, tmp_path, files):
     assert not panel.submit_button.isEnabled()
     text = panel.problems_label.text()
     assert "Type your student number." in text and "Item 3A-1: capture the waveform." in text
-    assert "1A-3" not in text
+    assert "Item 1A-3: measure it." in text
 
 
 def test_a_finished_formal_submission_is_saved_signed_and_gradable(qapp, tmp_path, files):
@@ -298,7 +314,7 @@ def test_a_finished_formal_submission_is_saved_signed_and_gradable(qapp, tmp_pat
     assert sub.student_number == "SMTCHR001" and sub.device_uid == panel.device.uid
     assert sub.theory_answers["1A-2"] == "Voltage divider rule."
     report = grade_submission(Assessment.load(path), sub, {"1A-2": True})
-    assert report.total == pytest.approx(2 + 3 + 3 + 2)
+    assert report.total == pytest.approx(2 + 3 + 3 + 2 + 1)
 
 
 def test_submit_reports_a_folder_that_cannot_be_written(qapp, tmp_path, files):
