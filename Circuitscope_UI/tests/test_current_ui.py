@@ -178,11 +178,11 @@ def new_item(editor):
     return p.items[-1]
 
 
-def test_switching_an_item_to_current_offers_i1_and_hides_the_second_probe(editor):
+def test_switching_an_item_to_current_offers_both_current_inputs_and_hides_the_second_probe(editor):
     item = new_item(editor)
     editor.i_quantity_box.setCurrentIndex(editor.i_quantity_box.findData("current"))
     assert item.quantity == Quantity.CURRENT
-    assert [editor.i_pos_box.itemData(i) for i in range(editor.i_pos_box.count())] == ["I1"]
+    assert [editor.i_pos_box.itemData(i) for i in range(editor.i_pos_box.count())] == ["I1", "I2"]
     assert item.probe_pos == "I1" and item.probe_neg is None
     assert not editor.item_form.isRowVisible(editor.i_neg_box)
     editor.i_expected_edit.setText("4.7")
@@ -195,7 +195,7 @@ def test_switching_back_to_voltage_restores_the_voltage_inputs(editor):
     editor.i_quantity_box.setCurrentIndex(editor.i_quantity_box.findData("voltage"))
     assert item.quantity == Quantity.VOLTAGE
     data = [editor.i_pos_box.itemData(i) for i in range(editor.i_pos_box.count())]
-    assert "P1" in data and "P6" in data and "I1" not in data
+    assert "P1" in data and "P5" in data and "P6" not in data and "I1" not in data
     assert editor.item_form.isRowVisible(editor.i_neg_box)
 
 
@@ -205,9 +205,9 @@ def test_validation_rejects_a_current_on_a_voltage_input_and_the_reverse(editor)
     item.quantity, item.probe_pos, item.probe_neg = Quantity.CURRENT, "P1", None
     assert any("current input" in p for p in editor.assessment.validate())
     item.quantity, item.probe_pos, item.probe_neg = Quantity.VOLTAGE, "I1", "P3"
-    assert any("P1 to P6" in p for p in editor.assessment.validate())
+    assert any("P1 to P5" in p for p in editor.assessment.validate())
     item.probe_pos = "P0"
-    assert any("P1 to P6" in p for p in editor.assessment.validate())
+    assert any("P1 to P5" in p for p in editor.assessment.validate())
 
 
 def test_a_current_item_survives_saving_and_loading(editor, tmp_path):
@@ -218,3 +218,45 @@ def test_a_current_item_survives_saving_and_loading(editor, tmp_path):
     back = Assessment.load(str(tmp_path / "a.json")).questions[0].parts[0].items[0]
     assert back.quantity == Quantity.CURRENT and back.probe_pos == "I1" and back.probe_neg is None
     assert back.expected == 4.7
+
+
+def test_the_second_current_input_can_be_chosen_in_the_creator(editor):
+    item = new_item(editor)
+    editor.i_quantity_box.setCurrentIndex(editor.i_quantity_box.findData("current"))
+    editor.i_pos_box.setCurrentIndex(editor.i_pos_box.findData("I2"))
+    editor.i_expected_edit.setText("-12")
+    assert item.probe_pos == "I2" and editor.assessment.validate() == []
+
+
+def test_both_current_inputs_are_offered_in_the_quick_and_calibration_panels(qapp):
+    quick, calibration = QuickCurrentPanel(), CurrentCalibrationPanel()
+    for box in (quick.channel_box, calibration.channel_box):
+        assert [box.itemText(i) for i in range(box.count())] == ["I1", "I2"]
+
+
+def test_quick_current_reads_the_second_input(qapp):
+    device = make_device()
+    device.board.set_dc("I2", -12.0)
+    panel = QuickCurrentPanel()
+    panel.set_device(device)
+    panel.channel_box.setCurrentIndex(1)
+    panel.measure_button.click()
+    wait_until(lambda: panel.result_label.text() != "-" and panel.measure_button.isEnabled())
+    assert float(panel.result_label.text().split()[0]) == pytest.approx(-12.0, abs=0.05)
+
+
+def test_calibrating_the_second_input_leaves_the_first_alone(qapp, tmp_path):
+    device = make_device(adc_gain=1.07)
+    panel = CurrentCalibrationPanel(folder=tmp_path)
+    panel.set_device(device)
+    panel.channel_box.setCurrentIndex(1)                       # I2
+    for ma, which in ((0.0, "low"), (20.0, "high")):
+        device.board.set_dc("I2", ma)
+        (panel.low_ma if which == "low" else panel.high_ma).setValue(ma)
+        (panel.low_button if which == "low" else panel.high_button).click()
+        wait_until(lambda: not panel._busy)
+    panel.apply_button.click()
+    assert "I2 calibrated" in panel.status_label.text()
+    assert load_calibration(device.uid, tmp_path, "I2") is not None
+    assert load_calibration(device.uid, tmp_path, "I1") is None
+    assert "I1" not in device.current_calibrations and "I2" in device.current_calibrations

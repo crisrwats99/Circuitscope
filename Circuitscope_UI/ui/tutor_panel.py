@@ -175,6 +175,10 @@ class TutorPanel(QWidget):
             self._say(f"This assessment has {len(problems)} problem(s): {problems[0]} Fix it in the "
                       f"Assessment creator first.", error=True)
             return False
+        if assessment.answers_removed:
+            self._say("This is a student copy with the answers removed, so it cannot be used for "
+                      "grading. Open the lecturer's own file.", error=True)
+            return False
         self.session = TutorSession(assessment)
         self.current_student = self.current_item = None
         marking = self._marking_path()

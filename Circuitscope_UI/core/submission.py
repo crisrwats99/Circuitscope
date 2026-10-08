@@ -36,16 +36,16 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
 from core.grading import GradeReport, StudentAnswers, grade_assessment
+from core.signing_key import SIGNING_KEY
 from core.models import Assessment, ItemType
 from core.waveform import WaveformError, compute_feature
 
 FILE_FORMAT = "circuitscope-submission"
 FILE_VERSION = 1
 
-# The secret signing key. CHANGE THIS to your own long random text before you
-# give the app to students, and keep it the same in the lecturer and student
-# copies of the app. (A real key would not sit in the source code - see above.)
-DEFAULT_KEY = b"change-this-key-before-use"
+# The secret signing key is built into the app (core/signing_key.py).
+# DEFAULT_KEY is the same value under its older name.
+DEFAULT_KEY = SIGNING_KEY
 
 MAX_STUDENT_NUMBER_LENGTH = 32
 
@@ -177,12 +177,12 @@ def _canonical(payload: dict) -> bytes:
                       ensure_ascii=False, allow_nan=False).encode("utf-8")
 
 
-def sign_payload(payload: dict, key: bytes = DEFAULT_KEY) -> str:
+def sign_payload(payload: dict, key: bytes = SIGNING_KEY) -> str:
     """HMAC-SHA256 of the payload, as 64 hex characters."""
     return hmac.new(key, _canonical(payload), hashlib.sha256).hexdigest()
 
 
-def verify_payload(payload: dict, signature: str, key: bytes = DEFAULT_KEY) -> bool:
+def verify_payload(payload: dict, signature: str, key: bytes = SIGNING_KEY) -> bool:
     """True only if the signature matches this exact payload and key."""
     expected = sign_payload(payload, key)
     # compare_digest takes the same time however many characters match,
@@ -194,7 +194,7 @@ def verify_payload(payload: dict, signature: str, key: bytes = DEFAULT_KEY) -> b
 # Saving and loading
 # ---------------------------------------------------------------------------
 
-def save_submission(sub: Submission, path: str, key: bytes = DEFAULT_KEY) -> None:
+def save_submission(sub: Submission, path: str, key: bytes = SIGNING_KEY) -> None:
     """Sign the submission and write it to `path` as a .json file."""
     if not sub.created_utc:
         sub.created_utc = datetime.now(timezone.utc).isoformat(timespec="seconds")
@@ -205,7 +205,7 @@ def save_submission(sub: Submission, path: str, key: bytes = DEFAULT_KEY) -> Non
         json.dump(document, f, indent=1, ensure_ascii=False)
 
 
-def load_submission(path: str, key: bytes = DEFAULT_KEY) -> Submission:
+def load_submission(path: str, key: bytes = SIGNING_KEY) -> Submission:
     """Read a submission and REFUSE it if the signature does not match."""
     try:
         with open(path, "r", encoding="utf-8") as f:

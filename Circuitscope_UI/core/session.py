@@ -34,7 +34,9 @@ from enum import Enum
 
 from core.formulas import FormulaError, formula_variables
 from core.grading import GradeReport, StudentAnswers, grade_assessment
-from core.models import Assessment, AnswerMode, ItemType
+from core.models import (Assessment, AnswerMode, ItemType, ModePolicy, PracticeFeedback,
+                         Quantity)
+from core.grading import OUT_OF_TOLERANCE
 from core.submission import (Submission, WaveformCapture,
                              MAX_STUDENT_NUMBER_LENGTH)
 
@@ -69,7 +71,8 @@ class StudentSession:
     def __init__(self, assessment: Assessment, mode: Mode = Mode.PRACTICE,
                  student_number: str = "", device_uid: str = ""):
         self.assessment = assessment
-        self.mode = mode
+        # The lecturer may allow only one mode; then the student's choice is overridden.
+        self.mode = self.forced_mode() or mode
         self.student_number = student_number
         self.device_uid = device_uid
         self.measurements: dict[str, float] = {}
@@ -77,6 +80,35 @@ class StudentSession:
         self.waveforms: dict[str, WaveformCapture] = {}
         self.theory_answers: dict[str, str] = {}
         self._items = {item.id: (q, item) for q, _p, item in assessment.iter_items()}
+
+    # ---- which mode ---------------------------------------------------------------
+
+    def forced_mode(self) -> Mode | None:
+        """The one mode the lecturer allows, or None when the student may choose."""
+        policy = self.assessment.mode_policy
+        if policy == ModePolicy.FORMAL_ONLY or self.assessment.answers_removed:   # no answers: no practice
+            return Mode.FORMAL
+        if policy == ModePolicy.PRACTICE_ONLY:
+            return Mode.PRACTICE
+        return None
+
+    def set_mode(self, mode: Mode) -> None:
+        forced = self.forced_mode()
+        if forced is not None and mode != forced:
+            raise SessionError(f"This assessment can only be done in {forced.value} mode.")
+        self.mode = mode
+
+    def has_work(self) -> bool:
+        return bool(self.measurements or self.waveforms or self.variables
+                    or any(t.strip() for t in self.theory_answers.values()))
+
+    def clear_all(self) -> None:
+        """Forget all the work (not the student number) so the student can start again,
+        in either mode if the lecturer allows both."""
+        self.measurements.clear()
+        self.variables.clear()
+        self.waveforms.clear()
+        self.theory_answers.clear()
 
     # ---- looking at the items ---------------------------------------------------
 
@@ -107,6 +139,8 @@ class StudentSession:
     def variables_needed(self, item_id: str) -> list[str]:
         """Names of the variables this item's formula uses (empty for fixed items)."""
         _q, item = self._item(item_id)
+        if item.required_variables:                  # an answer-free copy remembers them
+            return sorted(item.required_variables)
         if not (item.expected_formula and item.expected_formula.strip()):
             return []
         try:
@@ -177,6 +211,28 @@ class StudentSession:
         # Reuse the lecturer-side grading on a submission built from the current work.
         from core.submission import grade_submission
         return grade_submission(self.assessment, self._build(check_student=False))
+
+    def practice_item_feedback(self, report: GradeReport, item_id: str) -> tuple[str, bool]:
+        """
+        What practice mode tells the student about one finished item: (text, is_correct).
+        The lecturer chooses how much: DETAILED shows the measured and expected values,
+        CORRECT_ONLY only says whether it was right.
+        """
+        _question, item = self._item(item_id)
+        result = next(r for r in report.item_results if r.item_id == item_id)
+        if result.status.value == "correct":
+            return f"Correct: {result.awarded:g} / {result.available:g} marks.", True
+        marks = f"{result.awarded:g} / {result.available:g} marks."
+        if result.error_code != OUT_OF_TOLERANCE:
+            return f"{marks} {result.message}", False       # e.g. a missing value: nothing to hide
+        if self.assessment.practice_feedback == PracticeFeedback.CORRECT_ONLY:
+            return f"Not correct: {marks}", False
+        if self.kind(item_id) == ItemKind.MEASURE and result.measured is not None and result.expected is not None:
+            unit = "mA" if item.quantity == Quantity.CURRENT else "V"
+            allowed = _allowed_part(result.message)
+            return (f"{marks} Measured {result.measured:.4g} {unit} but expected "
+                    f"{result.expected:.4g} {unit}" + (f" {allowed}" if allowed else ".")), False
+        return f"{marks} {result.message}", False
 
     # ---- finishing ------------------------------------------------------------------------
 
@@ -253,7 +309,12 @@ class StudentSession:
             raise SessionError("The assessment was changed after this progress was saved, "
                                "so it cannot be continued. Start again.")
         try:
-            self.mode = Mode(d.get("mode", "practice"))
+            saved_mode = Mode(d.get("mode", "practice"))
+            forced = self.forced_mode()
+            if forced is not None and saved_mode != forced:
+                raise SessionError(f"The saved work was done in {saved_mode.value} mode, but this "
+                                   f"assessment can only be done in {forced.value} mode, so it was not used.")
+            self.mode = saved_mode
             self.student_number = d.get("student_number", "")
             self.device_uid = d.get("device_uid", "")
             self.measurements = {k: float(v) for k, v in d.get("measurements", {}).items()}
@@ -265,6 +326,12 @@ class StudentSession:
                               for i, c in d.get("waveforms", {}).items()}
         except (KeyError, TypeError, ValueError, AttributeError) as exc:
             raise SessionError(f"The saved progress is damaged ({exc}).") from exc
+
+
+def _allowed_part(message: str) -> str:
+    """The "(allowed 2.9 to 3.1)" part of a grading message, or nothing."""
+    start = message.find("(allowed")
+    return message[start:] if start >= 0 else ""
 
 
 def _finite(value, what: str) -> float:

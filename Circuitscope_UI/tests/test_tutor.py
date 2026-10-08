@@ -186,8 +186,8 @@ def test_marksheet_has_one_row_per_student(setup, tmp_path):
     rows = list(csv.reader(open(path, encoding="utf-8-sig")))[1:]       # [0] is the "sep=," hint line for Excel
     assert rows[0][:2] == ["Student number", "Device UID"]
     by_student = {r[0]: r for r in rows[1:]}
-    assert by_student["A1"][-3:-1] == ["8", "8"]
-    assert by_student["B2"][-3:-1] == ["3", "8"]                            # only the divider item
+    assert by_student["A1"][-4:-2] == ["8", "8"]
+    assert by_student["B2"][-4:-2] == ["3", "8"]                            # only the divider item
 
 
 # ---------- feedback ----------
@@ -244,3 +244,44 @@ def test_feedback_files_are_written_one_per_student_with_safe_names(setup, tmp_p
     assert len(set(paths)) == 3 and all(p.startswith(folder) for p in paths)
     assert all("/" not in n and "\\" not in n and ".." not in n for n in names)
     assert all("Student number:" in open(p, encoding="utf-8").read() for p in paths)
+
+
+# ---------- unmarked theory in the feedback ----------
+
+def test_an_unmarked_theory_answer_is_awaiting_marking_not_wrong(setup):
+    a, tutor, _ = setup
+    tutor.add_submission(student(a, "A1"))
+    record = tutor.record("A1")
+    for level in (FeedbackLevel.CORRECTNESS, FeedbackLevel.FULL):
+        text = tutor.feedback_text(record, level)
+        assert "1A-2 Explain: Awaiting tutor marking (?/3)" in text
+        assert "1A-2 Explain: Not correct" not in text
+        assert "Model answer" not in text                       # nothing is explained before it is marked
+    assert "1 theory answer(s) have not been marked yet" in tutor.feedback_text(record, FeedbackLevel.MARKS_ONLY)
+
+
+def test_once_marked_the_theory_answer_gets_a_verdict_and_the_note_goes(setup):
+    a, tutor, _ = setup
+    tutor.add_submission(student(a, "A1"))
+    tutor.set_decision("A1", "1A-2", False)
+    text = tutor.feedback_text(tutor.record("A1"), FeedbackLevel.CORRECTNESS)
+    assert "1A-2 Explain: Not correct (0/3)" in text and "Awaiting" not in text
+    assert "have not been marked" not in text
+
+
+# ---------- the mark sheet Notes column ----------
+
+def test_the_notes_column_lists_warnings_and_unmarked_theory(setup, tmp_path):
+    a, tutor, _ = setup
+    tutor.add_submission(student(a, "A1"))
+    tutor.add_submission(student(a, "B2"))                       # same box as A1 (same default uid)
+    tutor.add_submission(student(a, "C3", uid="00FFFFFFFFFFFFFFFFFF0001"))
+    tutor.set_decision("C3", "1A-2", True)
+    path = str(tmp_path / "marks.csv")
+    tutor.write_marksheet(path)
+    rows = {r[0]: r for r in list(csv.reader(open(path, encoding="utf-8-sig")))[2:]}
+    header = list(csv.reader(open(path, encoding="utf-8-sig")))[1]
+    assert header[-1] == "Notes"
+    assert "also used by: B2" in rows["A1"][-1] and "1 theory answer(s) not marked yet (1A-2)" in rows["A1"][-1]
+    assert "also used by: A1" in rows["B2"][-1]
+    assert rows["C3"][-1] == ""                                  # nothing to tell the tutor about C3

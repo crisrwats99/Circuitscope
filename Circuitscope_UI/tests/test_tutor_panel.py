@@ -207,7 +207,7 @@ def test_marksheet_is_written_and_warns_about_unmarked_theory(qapp, world):
     assert panel.export_marksheet(out)
     assert "not marked yet" not in panel.message_label.text()
     rows = {r[0]: r for r in list(csv.reader(open(out, encoding="utf-8-sig")))[1:]}
-    assert rows["A1"][-3] == "8" and rows["B2"][-3] == "3"
+    assert rows["A1"][-4] == "8" and rows["B2"][-4] == "3"
 
 
 def test_marksheet_to_an_unwritable_place_is_explained(qapp, world):

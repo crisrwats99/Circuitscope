@@ -34,14 +34,14 @@ import math
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (QAbstractItemView, QComboBox, QDoubleSpinBox, QFileDialog,
-                               QFormLayout, QGroupBox, QHBoxLayout, QLabel, QLineEdit,
+                               QFormLayout, QGroupBox, QHBoxLayout, QInputDialog, QLabel, QLineEdit,
                                QListWidget, QMessageBox, QPushButton, QScrollArea, QSpinBox,
                                QSplitter, QStackedWidget, QTableWidget, QTreeWidget,
                                QTreeWidgetItem, QVBoxLayout, QWidget)
 
 from ui.image_picker import ImagePicker, PromptEdit
 from core.channels import CURRENT_CHANNELS, VOLTAGE_CHANNELS
-from core.models import (TWO_CHANNEL_FEATURES, AnswerMode, Assessment, Item, ItemType, Part,
+from core.models import (TWO_CHANNEL_FEATURES, ModePolicy, PracticeFeedback, AnswerMode, Assessment, Item, ItemType, Part,
                          Quantity, Question, ScoringMode, ToleranceMode, Variable,
                          VariableSource, WaveformFeature, WaveformSpec)
 
@@ -60,6 +60,16 @@ FEATURE_NAMES = {f: f.value.replace("_", " ").capitalize() for f in WaveformFeat
 def _number(x: float) -> str:
     """3.0 -> '3', 2.5 -> '2.5' (for labels)."""
     return f"{x:.3f}".rstrip("0").rstrip(".") or "0"
+
+
+POLICY_CHOICES = {
+    "Student chooses practice or formal": ModePolicy.STUDENT_CHOOSES,
+    "Formal only (no marks shown, can be submitted)": ModePolicy.FORMAL_ONLY,
+    "Practice only (marks shown, cannot be submitted)": ModePolicy.PRACTICE_ONLY,
+}
+POLICY_TEXT = {ModePolicy.STUDENT_CHOOSES: "student chooses the mode",
+               ModePolicy.FORMAL_ONLY: "formal only",
+               ModePolicy.PRACTICE_ONLY: "practice only"}
 
 
 def _combo(entries, data_is_value: bool = True) -> QComboBox:
@@ -261,9 +271,16 @@ class AssessmentEditor(QWidget):
         self.id_label = QLabel()
         self.id_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
         form.addRow("Title:", self.title_edit)
+        self.feedback_box = _combo([
+            ("Show what was measured and what was expected (default)", PracticeFeedback.DETAILED.value),
+            ("Only say correct or not correct", PracticeFeedback.CORRECT_ONLY.value)])
+        self.feedback_box.setToolTip("What a student sees in PRACTICE mode when a reading is wrong. "
+                                     "Formal mode never shows marks.")
+        form.addRow("Practice feedback:", self.feedback_box)
         form.addRow("Contents:", self.info_label)
         form.addRow("Assessment id:", self.id_label)
         self.title_edit.textChanged.connect(self._apply_assessment)
+        self.feedback_box.currentIndexChanged.connect(self._apply_assessment)
         return page
 
     def _build_question_page(self) -> QWidget:
@@ -504,6 +521,7 @@ class AssessmentEditor(QWidget):
         try:
             if kind == "assessment":
                 self.title_edit.setText(obj.title)
+                self.feedback_box.setCurrentIndex(self.feedback_box.findData(obj.practice_feedback.value))
                 self.id_label.setText(obj.assessment_id)
                 self._refresh_info()
                 self.stack.setCurrentIndex(PAGE_ASSESSMENT)
@@ -729,6 +747,7 @@ class AssessmentEditor(QWidget):
         if self._loading or not self._current or self._current[0] != "assessment":
             return
         self.assessment.title = self.title_edit.text()
+        self.assessment.practice_feedback = PracticeFeedback(self.feedback_box.currentData())
         self._touch()
 
     def _apply_question(self, *_args) -> None:
@@ -1027,6 +1046,10 @@ class AssessmentEditor(QWidget):
         except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:   # JSON errors are ValueErrors
             self._set_status(f"Could not open: {describe_load_error(path, exc)}", error=True)
             return False
+        if loaded.answers_removed:
+            self._set_status("This is a student copy with the answers removed, so it cannot be edited. "
+                             "Open your own lecturer file instead.", error=True)
+            return False
         self._load_assessment(loaded, path)
         problems = len(self._all_problems())
         self._set_status(f"Opened {path}" + (f" ({problems} problem(s) to fix)." if problems else "."))
@@ -1050,7 +1073,7 @@ class AssessmentEditor(QWidget):
         self._set_status(f"Saved to {path}." + (f" Note: {n} problem(s) still to fix." if n else ""))
         return True
 
-    def export_for_students(self, path: str) -> bool:
+    def export_for_students(self, path: str, mode_policy: ModePolicy | None = None) -> bool:
         """
         Write the copy students receive. Refused while there are problems. The tutor-only model
         answers are left out; everything else (and the fingerprint) is identical to the tutor's file.
@@ -1061,17 +1084,18 @@ class AssessmentEditor(QWidget):
             self._set_status(f"Not exported: {len(problems)} problem(s) must be fixed first. "
                              f"The first is: {problems[0]}", error=True)
             return False
-        import copy
-        student_copy = copy.deepcopy(self.assessment)
-        for _q, _p, item in student_copy.iter_items():
-            item.model_answer = ""
+        student_copy = self.assessment.student_copy(mode_policy)      # only the exported copy changes
         try:
             student_copy.save(path)
         except OSError as exc:
             self._set_status(f"Could not export to '{path}': {exc.strerror or exc}. "
                              f"Check that the folder exists and that you are allowed to write there.", error=True)
             return False
-        self._set_status(f"Exported the student copy to {path}. Model answers were left out.")
+        left_out = ("Model answers, expected values, tolerances and formulas were left out, so the answers "
+                    "cannot be read from the file." if student_copy.answers_removed
+                    else "Model answers were left out.")
+        self._set_status(f"Exported the student copy to {path} ({POLICY_TEXT[student_copy.mode_policy]}). "
+                         f"{left_out}")
         return True
 
     # ----- the buttons that show file dialogs -------------------------------------
@@ -1086,13 +1110,23 @@ class AssessmentEditor(QWidget):
         if path:
             self.open_file(path)
 
+    def choose_mode_policy(self) -> ModePolicy | None:
+        """Ask which modes students may use (None = cancelled). Tests replace this."""
+        texts = list(POLICY_CHOICES)
+        start = [POLICY_CHOICES[t] for t in texts].index(self.assessment.mode_policy)
+        text, ok = QInputDialog.getItem(self, "Export for students", "Students may use:", texts, start, False)
+        return POLICY_CHOICES[text] if ok else None
+
     def _export_clicked(self) -> None:
+        policy = self.choose_mode_policy()
+        if policy is None:
+            return
         suggested = f"{self.assessment.title.strip() or 'assessment'}_students.json"
         path, _ = QFileDialog.getSaveFileName(self, "Export for students", suggested, "Assessment (*.json)")
         if path:
             if not path.lower().endswith(".json"):
                 path += ".json"
-            self.export_for_students(path)
+            self.export_for_students(path, policy)
 
     def _save_as_clicked(self) -> bool:
         path, _ = QFileDialog.getSaveFileName(self, "Save assessment", "", "Assessment (*.json)")

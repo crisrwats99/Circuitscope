@@ -28,8 +28,9 @@ from enum import Enum
 
 from core.export import MarkRow, write_marksheet
 from core.grading import MISSING_VARIABLE, NOT_ANSWERED, OUT_OF_TOLERANCE, THEORY_INCORRECT, GradeReport, Status
+from core.signing_key import SIGNING_KEY
 from core.models import Assessment, ItemType
-from core.submission import (DEFAULT_KEY, Submission, SubmissionError, check_matches,
+from core.submission import (Submission, SubmissionError, check_matches,
                              grade_submission, load_submission)
 
 MARKING_FORMAT = "circuitscope-marking"
@@ -54,7 +55,10 @@ class StudentRecord:
 
 
 class TutorSession:
-    def __init__(self, assessment: Assessment, key: bytes = DEFAULT_KEY):
+    def __init__(self, assessment: Assessment, key: bytes = SIGNING_KEY):
+        if assessment.answers_removed:
+            raise ValueError("This is a student copy with the answers removed, so it cannot be used for "
+                             "grading. Use the lecturer's own file.")
         self.assessment = assessment
         self.key = key
         self.records: list[StudentRecord] = []
@@ -170,8 +174,17 @@ class TutorSession:
     def report(self, record: StudentRecord) -> GradeReport:
         return grade_submission(self.assessment, record.submission, record.decisions)
 
+    def sheet_notes(self, record: StudentRecord) -> list[str]:
+        """What goes in the mark sheet's Notes column: the warnings, and any unmarked theory."""
+        notes = self.notes(record)
+        pending = self.pending_theory(record)
+        if pending:
+            notes.append(f"{len(pending)} theory answer(s) not marked yet ({', '.join(pending)}).")
+        return notes
+
     def write_marksheet(self, path: str) -> None:
-        rows = [MarkRow(r.student_number, r.submission.device_uid, self.report(r)) for r in self.records]
+        rows = [MarkRow(r.student_number, r.submission.device_uid, self.report(r), self.sheet_notes(r))
+                for r in self.records]
         write_marksheet(path, self.assessment, rows)
 
     # ---- feedback for students ----------------------------------------------------------------------
@@ -181,7 +194,12 @@ class TutorSession:
         results = {r.item_id: r for r in report.item_results}
         lines = [f"Circuitscope feedback: {self.assessment.title}",
                  f"Student number: {record.student_number}",
-                 f"Total: {report.total:g} / {report.total_available:g}", ""]
+                 f"Total: {report.total:g} / {report.total_available:g}"]
+        pending = self.pending_theory(record)
+        if pending:
+            lines.append(f"Note: {len(pending)} theory answer(s) have not been marked yet, so this total "
+                         f"may still go up.")
+        lines.append("")
         for question in self.assessment.questions:
             qr = next(q for q in report.question_results if q.question_id == question.id)
             lines.append(f"Question {question.id}: {question.title}  {qr.awarded:g} / {qr.available:g}")
@@ -190,6 +208,9 @@ class TutorSession:
             for part in question.parts:
                 for item in part.items:
                     r = results[item.id]
+                    if item.id in pending:                       # a theory answer nobody has marked yet
+                        lines.append(f"  {item.id} {item.description}: Awaiting tutor marking (?/{r.available:g})")
+                        continue
                     verdict = "Correct" if r.status == Status.CORRECT else "Not correct"
                     lines.append(f"  {item.id} {item.description}: {verdict} ({r.awarded:g}/{r.available:g})")
                     if r.status != Status.CORRECT:

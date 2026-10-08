@@ -55,9 +55,9 @@ class SimulatedBoard:
         self._signals: dict[str, float | Callable] = {}
         # The inputs the board answers to. The current inputs have their own analogue circuit
         # (a signal on I1 is in MILLIAMPS), so each channel can have its own front end.
-        # I2 is accepted too, so the second current input can be tried before it is wired.
-        self.known_channels = set(VOLTAGE_CHANNELS) | set(CURRENT_CHANNELS) | {"I2"}
-        self.channel_front_ends: dict[str, FrontEnd] = {"I1": CURRENT_SENSE, "I2": CURRENT_SENSE}
+        self.known_channels = set(VOLTAGE_CHANNELS) | set(CURRENT_CHANNELS)
+        # every current input has its own copy of the current circuit
+        self.channel_front_ends: dict[str, FrontEnd] = {ch: CURRENT_SENSE for ch in CURRENT_CHANNELS}
 
     # --- tell the board what is connected to each test point ---------------
 

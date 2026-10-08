@@ -23,8 +23,8 @@ def make_device(**board_options) -> SerialDevice:
 # ---------- channel lists ----------
 
 def test_channel_lists_match_the_hardware():
-    assert channels.VOLTAGE_CHANNELS == ["P1", "P2", "P3", "P4", "P5", "P6"]
-    assert channels.CURRENT_CHANNELS == ["I1"]
+    assert channels.VOLTAGE_CHANNELS == ["P1", "P2", "P3", "P4", "P5"]
+    assert channels.CURRENT_CHANNELS == ["I1", "I2"]
     assert not set(channels.VOLTAGE_CHANNELS) & set(channels.CURRENT_CHANNELS)
 
 
@@ -140,3 +140,40 @@ def test_a_damaged_current_file_gives_a_clear_error(tmp_path):
     (tmp_path / f"{UID}_I1.json").write_text("{not json", encoding="utf-8")
     with pytest.raises(CalibrationError, match="damaged"):
         load_calibration(UID, tmp_path, "I1")
+
+
+# ---------- the second current input (PA7) ----------
+
+def test_the_two_current_inputs_read_independently():
+    device = make_device()
+    device.board.set_dc("I1", 4.7)
+    device.board.set_dc("I2", -12.0)
+    assert device.measure_current("I1") == pytest.approx(4.7, abs=0.05)
+    assert device.measure_current("I2") == pytest.approx(-12.0, abs=0.05)
+
+
+def test_p6_no_longer_exists_because_pa7_is_a_current_input():
+    device = make_device()
+    with pytest.raises(Exception, match="P6"):
+        device.measure_voltage("P6", "P3")
+
+
+def test_each_current_input_has_its_own_calibration():
+    device = make_device(adc_gain=1.07)
+    device.board.set_dc("I2", 0.0)
+    c_low, _ = device.read_mean_counts("I2")
+    device.board.set_dc("I2", 20.0)
+    c_high, _ = device.read_mean_counts("I2")
+    device.current_calibrations["I2"] = Calibration.fit_two_point(c_low, 0.0, c_high, 20.0, unit="mA")
+    device.board.set_dc("I1", 10.0)
+    device.board.set_dc("I2", 10.0)
+    assert device.measure_current("I2") == pytest.approx(10.0, abs=0.05)         # calibrated
+    assert abs(device.measure_current("I1") - 10.0) > 0.4                        # I1 is not
+
+
+def test_both_current_calibrations_are_saved_apart(tmp_path):
+    cal1, cal2 = Calibration(0.017, -37.0), Calibration(0.0172, -37.3)
+    save_calibration(UID, cal1, tmp_path, front_end=CURRENT_SENSE, channel="I1")
+    save_calibration(UID, cal2, tmp_path, front_end=CURRENT_SENSE, channel="I2")
+    assert load_calibration(UID, tmp_path, "I1").calibration == cal1
+    assert load_calibration(UID, tmp_path, "I2").calibration == cal2

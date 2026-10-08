@@ -4,12 +4,13 @@ core/export.py
 Writes the lecturer's MARK SHEET as a CSV file that opens in Excel.
 
 One row per student:
-    Student number | Device UID | Q1 (/5) | Q2 (/3) | Q3 (/2) | Total | Out of | Needs review
+    Student number | Device UID | Q1 (/5) | Q2 (/3) | Q3 (/2) | Total | Out of | Needs review | Notes
 
 The question columns are generated automatically from the assessment, so a
 practical with 4 questions gets 4 columns and one with 9 gets 9. "Needs review"
 counts the items the tutor must look at (could not be graded, e.g. a bad
-waveform, or nothing recorded).
+waveform, or nothing recorded). "Notes" lists what the tutor should know about that
+student (the assessment was edited, a box was shared, theory answers not marked yet).
 
 CSV is used here (and only here) because it is a flat table for Excel; the
 assessments themselves are JSON. The file starts with a "sep=," line so Excel splits
@@ -19,7 +20,7 @@ the columns correctly on computers that use a semicolon as the list separator.
 from __future__ import annotations
 
 import csv
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from core.grading import GradeReport, Status
 from core.models import Assessment
@@ -31,6 +32,7 @@ class MarkRow:
     student_number: str
     device_uid: str
     report: GradeReport
+    notes: list[str] = field(default_factory=list)       # for the tutor only, e.g. "shared box"
 
 
 def _safe_text(value: str) -> str:
@@ -67,7 +69,7 @@ def marksheet_rows(assessment: Assessment, rows: list[MarkRow]) -> list[list[str
     """The whole mark sheet as a list of text rows (header first)."""
     columns = question_columns(assessment)
     header = ["Student number", "Device UID"] + [h for _id, h in columns] \
-        + ["Total", "Out of", "Needs review"]
+        + ["Total", "Out of", "Needs review", "Notes"]
     table = [header]
     for row in rows:
         marks = row.report.question_marks                       # question id -> mark
@@ -76,7 +78,8 @@ def marksheet_rows(assessment: Assessment, rows: list[MarkRow]) -> list[list[str
         table.append(
             [_safe_text(row.student_number), _safe_text(row.device_uid)]
             + [_number(marks.get(qid, 0.0)) for qid, _h in columns]
-            + [_number(row.report.total), _number(row.report.total_available), str(review)])
+            + [_number(row.report.total), _number(row.report.total_available), str(review),
+               _safe_text(" | ".join(row.notes))])
     return table
 
 

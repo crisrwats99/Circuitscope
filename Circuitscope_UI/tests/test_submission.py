@@ -235,11 +235,12 @@ def test_marksheet_contents():
     a = make_assessment()
     good = grade_submission(a, make_submission(a), {"1A-2": True})
     partial = grade_submission(a, make_submission(a))          # theory not marked
-    table = marksheet_rows(a, [MarkRow("STU001", "UID1", good), MarkRow("STU002", "UID2", partial)])
+    table = marksheet_rows(a, [MarkRow("STU001", "UID1", good),
+                               MarkRow("STU002", "UID2", partial, ["shared box", "1 theory answer not marked"])])
     assert table[0] == ["Student number", "Device UID", "Q1 (/5)", "Q2 (/3)", "Q3 (/2)",
-                        "Total", "Out of", "Needs review"]
-    assert table[1] == ["STU001", "UID1", "5", "3", "2", "10", "10", "0"]
-    assert table[2] == ["STU002", "UID2", "2", "3", "2", "7", "10", "1"]
+                        "Total", "Out of", "Needs review", "Notes"]
+    assert table[1] == ["STU001", "UID1", "5", "3", "2", "10", "10", "0", ""]
+    assert table[2] == ["STU002", "UID2", "2", "3", "2", "7", "10", "1", "shared box | 1 theory answer not marked"]
 
 
 def test_csv_file_is_written_and_opens_in_excel_friendly_form(tmp_path):

@@ -26,7 +26,7 @@ import numpy as np
 import pyqtgraph as pg
 from PySide6.QtCore import QTimer, Qt
 from PySide6.QtWidgets import (QComboBox, QFileDialog, QFormLayout, QGroupBox, QHBoxLayout, QLabel,
-                               QLineEdit, QPlainTextEdit, QPushButton, QScrollArea, QSplitter,
+                               QLineEdit, QMessageBox, QPlainTextEdit, QPushButton, QScrollArea, QSplitter,
                                QStackedWidget, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget)
 
 from core.models import Assessment, Quantity, VariableSource
@@ -65,6 +65,11 @@ class StudentPanel(QWidget):
         self.mode_box = QComboBox()
         self.mode_box.addItem("Practice (shows marks)", Mode.PRACTICE)
         self.mode_box.addItem("Formal (marked by the lecturer)", Mode.FORMAL)
+        self.mode_fixed_label = QLabel("")        # shown instead of the box when the lecturer fixed the mode
+        self.mode_fixed_label.setStyleSheet("font-weight: bold;")
+        self.clear_button = QPushButton("Start again")
+        self.clear_button.setToolTip("Delete all the work done so far, so you can start over "
+                                     "(and change mode if the lecturer allows both).")
         self.number_edit = QLineEdit()
         self.number_edit.setPlaceholderText("Student number")
         self.number_edit.setMaximumWidth(180)
@@ -74,6 +79,8 @@ class StudentPanel(QWidget):
         top.addStretch(1)
         top.addWidget(QLabel("Mode:"))
         top.addWidget(self.mode_box)
+        top.addWidget(self.mode_fixed_label)
+        top.addWidget(self.clear_button)
         top.addWidget(QLabel("Student number:"))
         top.addWidget(self.number_edit)
 
@@ -186,12 +193,14 @@ class StudentPanel(QWidget):
 
         self.open_button.clicked.connect(self._open_clicked)
         self.mode_box.currentIndexChanged.connect(self._mode_changed)
+        self.clear_button.clicked.connect(self._clear_clicked)
         self.number_edit.textChanged.connect(self._number_changed)
         self.tree.currentItemChanged.connect(self._tree_selection_changed)
         self.measure_button.clicked.connect(self._measure_clicked)
         self.capture_button.clicked.connect(self._capture_clicked)
         self.answer_edit.textChanged.connect(self._theory_changed)
         self.submit_button.clicked.connect(self._submit_clicked)
+        self._show_mode_choice()
         self._refresh()
 
     # ====================================================================
@@ -223,6 +232,7 @@ class StudentPanel(QWidget):
         self.number_edit.setText(self.session.student_number)
         self.mode_box.setCurrentIndex(0 if self.session.mode == Mode.PRACTICE else 1)
         self._loading = False
+        self._show_mode_choice()
         self.session.device_uid = self._uid()
         first = next(iter(self._tree_items))
         self.tree.setCurrentItem(self._tree_items[first])
@@ -413,9 +423,41 @@ class StudentPanel(QWidget):
 
     def _mode_changed(self, _index: int) -> None:
         if self.session is not None and not self._loading:
-            self.session.mode = Mode(self.mode_box.currentData())
+            try:
+                self.session.set_mode(Mode(self.mode_box.currentData()))
+            except SessionError as exc:                      # the lecturer fixed the mode
+                self._say(str(exc), error=True)
+                return
             self.autosave()
             self._refresh()
+
+    def _show_mode_choice(self) -> None:
+        """Show the mode box, or (when the lecturer allows only one mode) just say which it is."""
+        forced = self.session.forced_mode() if self.session else None
+        self.mode_box.setVisible(forced is None)
+        self.mode_fixed_label.setVisible(forced is not None)
+        if forced is not None:
+            self.mode_fixed_label.setText("Practice (shows feedback; set by your lecturer)"
+                                          if forced == Mode.PRACTICE else
+                                          "Formal (set by your lecturer)")
+
+    def confirm(self, question: str) -> bool:
+        """Ask a yes/no question. (Tests replace this so no dialog appears.)"""
+        return QMessageBox.question(self, "Circuitscope", question) == QMessageBox.Yes
+
+    def _clear_clicked(self) -> None:
+        if self.session is None or not self.session.has_work():
+            return
+        if not self.confirm("Delete ALL the work you have done on this assessment and start again? "
+                            "This cannot be undone."):
+            return
+        self.session.clear_all()
+        self.autosave()
+        self._say("All work was cleared. You can start again" +
+                  ("." if self.session.forced_mode() else ", in either mode."))
+        if self.current_item:
+            self._show_item(self.current_item)
+        self._refresh()
 
     def _variable_typed(self, question_id: str, name: str, edit: QLineEdit) -> None:
         if self._loading or self.session is None:
@@ -559,9 +601,7 @@ class StudentPanel(QWidget):
         self.message_label.setStyleSheet(RED if error else "")
 
     def _has_work(self) -> bool:
-        s = self.session
-        return bool(s and (s.measurements or s.waveforms or s.variables
-                           or any(t.strip() for t in s.theory_answers.values())))
+        return bool(self.session and self.session.has_work())
 
     def _refresh(self) -> None:
         """Redraw everything that depends on the session: list marks, buttons, progress, marks."""
@@ -575,7 +615,10 @@ class StudentPanel(QWidget):
                 widget.setEnabled(have_box)
         self.number_edit.setEnabled(s is not None)
         # The mode is locked once work exists, so it cannot be flipped to peek at marks and redo.
+        # "Start again" clears the work, which unlocks it.
         self.mode_box.setEnabled(s is not None and not self._has_work())
+        self.mode_box.setToolTip("Press Start again to change the mode." if self._has_work() else "")
+        self.clear_button.setEnabled(s is not None and self._has_work() and not self._busy)
         if s is None:
             self.submit_button.setEnabled(False)
             self.progress_label.setText("")
@@ -636,12 +679,8 @@ class StudentPanel(QWidget):
             if kind == ItemKind.THEORY:
                 feedback = "Answer saved. The tutor marks theory answers."
             elif report is not None:
-                result = next(r for r in report.item_results if r.item_id == item_id)
-                if result.status.value == "correct":
-                    feedback = f"Correct: {result.awarded:g} / {result.available:g} marks."
-                else:
-                    feedback = f"{result.awarded:g} / {result.available:g} marks. {result.message}"
-                    error = True
+                feedback, correct = s.practice_item_feedback(report, item_id)
+                error = not correct
             else:
                 feedback = "Recorded."
         self.feedback_label.setText(feedback)

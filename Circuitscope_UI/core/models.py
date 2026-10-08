@@ -37,7 +37,8 @@ from enum import Enum                               # fixed lists of allowed cho
 from typing import Iterator                         # type hint for generator functions
 
 from core.channels import CURRENT_CHANNELS, VOLTAGE_CHANNELS, voltage_range_text
-from core.formulas import CONSTANTS, FUNCTIONS, check_formula   # formula checking (Stage 6)
+from core.formulas import (CONSTANTS, FUNCTIONS, FormulaError, check_formula,   # formula checking (Stage 6)
+                           formula_variables)
 
 # Version 3 added question text, model answers and images (version 1 and 2 files still load).
 # Written into every saved file. When the format changes this number goes up,
@@ -97,6 +98,19 @@ class ScoringMode(str, Enum):
 class Quantity(str, Enum):
     VOLTAGE = "voltage"          # measured in volts
     CURRENT = "current"          # measured in milliamps (mA)
+
+
+class ModePolicy(str, Enum):
+    """Which modes a student may use. Chosen by the lecturer when exporting the student copy."""
+    STUDENT_CHOOSES = "student_chooses"    # the student picks practice or formal
+    FORMAL_ONLY = "formal_only"            # marks are never shown; the work is submitted
+    PRACTICE_ONLY = "practice_only"        # marks are shown; nothing can be submitted
+
+
+class PracticeFeedback(str, Enum):
+    """How much a student is told about a wrong answer in practice mode."""
+    DETAILED = "detailed"                  # "Measured 2.1 V but expected 3.3 V ..."
+    CORRECT_ONLY = "correct_only"          # only "Correct" or "Not correct"
 
 
 class ToleranceMode(str, Enum):
@@ -230,6 +244,10 @@ class Item:
     image: str | None = None                 # a picture (PNG, base64 text) shown with the question
     model_answer: str = ""                   # THEORY items: what the tutor looks for when marking
 
+    # Only in a formal-only student copy, where the formula is removed: the names of the
+    # variables the formula used, so the student is still told which values are needed.
+    required_variables: list[str] = field(default_factory=list)
+
     @classmethod
     def from_dict(cls, d: dict) -> "Item":
         wf = d.get("waveform")                     # a dict, or None
@@ -251,6 +269,7 @@ class Item:
             prompt=d.get("prompt", ""),
             image=d.get("image"),
             model_answer=d.get("model_answer", ""),
+            required_variables=[str(n) for n in d.get("required_variables", [])],
         )
 
 
@@ -303,6 +322,14 @@ class Question:
         )
 
 
+def _enum_or(enum_class, value, default):
+    """`value` as a member of `enum_class`, or `default` if it is missing or not one of them."""
+    try:
+        return enum_class(value)
+    except ValueError:
+        return default
+
+
 @dataclass
 class Assessment:
     """A whole practical, created by a lecturer."""
@@ -312,6 +339,14 @@ class Assessment:
     # default_factory runs the lambda each time, giving every new assessment its own id.
     assessment_id: str = field(default_factory=lambda: str(uuid.uuid4()))
     schema_version: int = SCHEMA_VERSION                 # file-format version
+    # How students may use this assessment, and how much practice mode tells them. Neither
+    # changes the marking, so neither is part of the fingerprint (see content_hash).
+    mode_policy: ModePolicy = ModePolicy.STUDENT_CHOOSES
+    practice_feedback: PracticeFeedback = PracticeFeedback.DETAILED
+    # Set only on a formal-only student copy, which has its answers (expected values, tolerances,
+    # formulas) removed. It holds the fingerprint of the full assessment, so what the student
+    # submits still matches the lecturer's own file.
+    fingerprint: str = ""
 
     # --- Walking through the structure ------------------------------------
     def iter_items(self) -> Iterator[tuple[Question, Part, Item]]:
@@ -326,6 +361,38 @@ class Assessment:
         """Add up the marks of every item in the whole assessment."""
         return sum(item.marks for _q, _p, item in self.iter_items())
 
+    @property
+    def answers_removed(self) -> bool:
+        """True for a student copy that has no answers in it (it can only be done in formal mode)."""
+        return bool(self.fingerprint)
+
+    def student_copy(self, mode_policy: "ModePolicy | None" = None) -> "Assessment":
+        """
+        The copy handed to students. The tutor-only model answers are always left out.
+        If the students may only work in FORMAL mode there is no practice feedback to give, so
+        the expected values, tolerances and formulas are removed too (a student cannot read the
+        answers out of the file). The fingerprint of the full assessment is kept, so submissions
+        still match the lecturer's file.
+        """
+        import copy
+        result = copy.deepcopy(self)
+        if mode_policy is not None:
+            result.mode_policy = mode_policy
+        for _q, _p, item in result.iter_items():
+            item.model_answer = ""
+        if result.mode_policy == ModePolicy.FORMAL_ONLY:
+            result.fingerprint = self.content_hash()
+            for _q, _p, item in result.iter_items():
+                if item.expected_formula and item.expected_formula.strip():
+                    try:
+                        item.required_variables = sorted(formula_variables(item.expected_formula))
+                    except FormulaError:
+                        item.required_variables = []
+                item.expected = None
+                item.expected_formula = None
+                item.tolerance = 0.0
+        return result
+
     # --- Fingerprint ------------------------------------------------------
     def content_hash(self) -> str:
         """
@@ -335,7 +402,10 @@ class Assessment:
         """
         # sort_keys + fixed separators make the text identical every time
         # for identical content (so identical content -> identical hash).
+        if self.fingerprint:                       # a student copy with the answers removed
+            return self.fingerprint
         data = asdict(self)
+        data.pop("fingerprint", None)
         # The model answer is for the tutor only (it is removed from the copy given to
         # students), so it must not change the fingerprint or students' submissions
         # would no longer match the tutor's file.
@@ -343,6 +413,11 @@ class Assessment:
             for part in question["parts"]:
                 for item in part["items"]:
                     item.pop("model_answer", None)
+                    item.pop("required_variables", None)        # only used in answer-free student copies
+        # The same goes for the mode policy and the practice feedback style: the lecturer can
+        # export one practical in different ways without it counting as "a different version".
+        data.pop("mode_policy", None)
+        data.pop("practice_feedback", None)
         canonical = json.dumps(data, sort_keys=True, separators=(",", ":"))
         return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
@@ -490,8 +565,9 @@ class Assessment:
                         for message in check_formula(item.expected_formula, names):
                             problems.append(f"{where}: formula problem - {message}")
 
+                    stripped = self.answers_removed     # a student copy has no answers to check
                     if mode == AnswerMode.SINGLE:
-                        if not has_fixed:
+                        if not has_fixed and not stripped:
                             problems.append(f"{where}: has no expected value. Type the number the student "
                                             f"should measure, e.g. 3.3.")
                         if has_formula:
@@ -499,7 +575,7 @@ class Assessment:
                                             f"formula, or change the answer type to 'Varying (formula)'.")
 
                     elif mode == AnswerMode.VARYING:
-                        if not has_formula:
+                        if not has_formula and not stripped:
                             problems.append(f"{where}: is a varying-answer item but has no formula. Type one "
                                             f"such as Vs * R2 / (R1 + R2) using this question's variables.")
                         if has_fixed:
@@ -509,7 +585,7 @@ class Assessment:
 
                     elif mode == AnswerMode.WAVEFORM:
                         # Exactly ONE of fixed value / formula must be given.
-                        if not has_fixed and not has_formula:
+                        if not has_fixed and not has_formula and not stripped:
                             problems.append(f"{where}: has no expected value for the waveform feature. Type "
                                             f"a number, or a formula using this question's variables.")
                         elif has_fixed and has_formula:
@@ -565,4 +641,9 @@ class Assessment:
             # Whatever the file said, the object now follows the CURRENT format,
             # so saving it again upgrades an old file to version 2.
             schema_version=SCHEMA_VERSION,
+            # Older files have neither setting; an unknown value falls back to the default.
+            mode_policy=_enum_or(ModePolicy, data.get("mode_policy"), ModePolicy.STUDENT_CHOOSES),
+            practice_feedback=_enum_or(PracticeFeedback, data.get("practice_feedback"),
+                                       PracticeFeedback.DETAILED),
+            fingerprint=str(data.get("fingerprint") or ""),
         )
