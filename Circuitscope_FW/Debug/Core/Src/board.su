@@ -1,0 +1,2 @@
+../Core/Src/board.c:11:6:board_get_uid	24	static
+../Core/Src/board.c:18:6:board_led_toggle	8	static

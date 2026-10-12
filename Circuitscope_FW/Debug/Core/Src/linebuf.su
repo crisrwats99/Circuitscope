@@ -1,0 +1,2 @@
+../Core/Src/linebuf.c:9:6:linebuf_reset	16	static
+../Core/Src/linebuf.c:23:13:linebuf_push	16	static

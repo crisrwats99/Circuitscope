@@ -1,0 +1,12 @@
+../Core/Src/protocol.c:39:13:reply_err	220	static
+../Core/Src/protocol.c:52:13:channel_name_list	40	static
+../Core/Src/protocol.c:70:17:tokenize	32	static
+../Core/Src/protocol.c:84:13:str_ieq	24	static
+../Core/Src/protocol.c:100:21:parse_number	104	static
+../Core/Src/protocol.c:136:13:expect_no_args	16	static
+../Core/Src/protocol.c:146:13:cmd_ping	16	static
+../Core/Src/protocol.c:153:13:cmd_info	224	static
+../Core/Src/protocol.c:164:13:cmd_id	232	static
+../Core/Src/protocol.c:176:13:cmd_sample	184	static
+../Core/Src/protocol.c:277:6:protocol_handle_line	120	static
+../Core/Src/protocol.c:312:6:protocol_handle_too_long	8	static

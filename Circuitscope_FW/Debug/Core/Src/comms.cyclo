@@ -1,0 +1,7 @@
+../Core/Src/comms.c:26:13:start_rx	1
+../Core/Src/comms.c:31:6:comms_init	1
+../Core/Src/comms.c:39:6:HAL_UART_RxCpltCallback	5
+../Core/Src/comms.c:60:6:HAL_UART_ErrorCallback	2
+../Core/Src/comms.c:67:16:comms_get_line	3
+../Core/Src/comms.c:81:6:comms_send	1
+../Core/Src/comms.c:88:6:comms_send_line	1
