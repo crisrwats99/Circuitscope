@@ -9,6 +9,7 @@
 "./Core/Src/main.o"
 "./Core/Src/measure.o"
 "./Core/Src/protocol.o"
+"./Core/Src/sampling.o"
 "./Core/Src/stm32g4xx_hal_msp.o"
 "./Core/Src/stm32g4xx_it.o"
 "./Core/Src/syscalls.o"

@@ -1,0 +1,8 @@
+../Core/Src/sampling.c:14:10:sampling_divider	3
+../Core/Src/sampling.c:24:10:sampling_actual_rate_mhz	1
+../Core/Src/sampling.c:30:6:sampling_format_done	1
+../Core/Src/sampling.c:38:10:sampling_duration_ms	1
+../Core/Src/sampling.c:51:13:set_job	1
+../Core/Src/sampling.c:62:6:sampling_plan	14
+../Core/Src/sampling.c:128:15:put_uint	3
+../Core/Src/sampling.c:142:6:sampling_send_data	5

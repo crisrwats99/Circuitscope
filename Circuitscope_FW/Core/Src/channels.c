@@ -26,17 +26,19 @@
 #endif
 
 /* Order here is the order listed in error messages. */
+/* ADC column: CH_ADC1 / CH_ADC2 = pin wired to that converter only;
+ * CH_ADC_ANY = pin wired to both (the datasheet calls it ADC12_INx). */
 const channel_t g_channels[] = {
-    /*  name   ADC  HAL channel          pin    Nucleo header */
-    CH("P1",   1,   ADC_CHANNEL_1),   /* PA0    A0 */
-    CH("P2",   1,   ADC_CHANNEL_2),   /* PA1    A1 */
-    CH("P3",   2,   ADC_CHANNEL_17),  /* PA4    A3 */
-    CH("P4",   2,   ADC_CHANNEL_13),  /* PA5    A4 */
-    CH("P5",   2,   ADC_CHANNEL_3),   /* PA6    A5 */
-    CH("P6",   1,   ADC_CHANNEL_10),  /* PF0    D7 */
-    CH("P7",   2,   ADC_CHANNEL_10),  /* PF1    D8 */
-    CH("I1",   1,   ADC_CHANNEL_15),  /* PB0    D3  (current sense 1) */
-    CH("I2",   2,   ADC_CHANNEL_4),   /* PA7    A6  (current sense 2) */
+    /*  name   ADC          HAL channel          pin    Nucleo header */
+    CH("P1",   CH_ADC_ANY,  ADC_CHANNEL_1),   /* PA0    A0  (ADC12_IN1) */
+    CH("P2",   CH_ADC_ANY,  ADC_CHANNEL_2),   /* PA1    A1  (ADC12_IN2) */
+    CH("P3",   CH_ADC2,     ADC_CHANNEL_17),  /* PA4    A3 */
+    CH("P4",   CH_ADC2,     ADC_CHANNEL_13),  /* PA5    A4 */
+    CH("P5",   CH_ADC2,     ADC_CHANNEL_3),   /* PA6    A5 */
+    CH("P6",   CH_ADC1,     ADC_CHANNEL_10),  /* PF0    D7 */
+    CH("P7",   CH_ADC2,     ADC_CHANNEL_10),  /* PF1    D8 */
+    CH("I1",   CH_ADC1,     ADC_CHANNEL_15),  /* PB0    D3  (current sense 1) */
+    CH("I2",   CH_ADC2,     ADC_CHANNEL_4),   /* PA7    A6  (current sense 2) */
 };
 
 const uint8_t g_channel_count = (uint8_t)(sizeof g_channels / sizeof g_channels[0]);

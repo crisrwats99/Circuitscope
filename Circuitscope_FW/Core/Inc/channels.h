@@ -10,10 +10,17 @@
 
 #include <stdint.h>
 
+/* Which converter(s) can read a pin (channel_t.adc). */
+#define CH_ADC1     1u   /* pin only connects to ADC1                          */
+#define CH_ADC2     2u   /* pin only connects to ADC2                          */
+#define CH_ADC_ANY  3u   /* pin connects to both (PA0, PA1: "ADC12_INx"); the  */
+                         /* firmware picks whichever ADC is free so that two   */
+                         /* channels can be sampled at exactly the same time   */
+
 /** One measurement input. */
 typedef struct {
     const char *name;         /* name used in SAMPLE commands, e.g. "P1"       */
-    uint8_t     adc;          /* which converter reads it: 1 = ADC1, 2 = ADC2  */
+    uint8_t     adc;          /* CH_ADC1, CH_ADC2 or CH_ADC_ANY                */
     uint32_t    hal_channel;  /* HAL channel constant, e.g. ADC_CHANNEL_1      */
 } channel_t;
 

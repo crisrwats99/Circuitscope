@@ -253,7 +253,8 @@ static void test_line_assembly(void)
 static void test_channel_table(void)
 {
     const char *expected[] = { "P1","P2","P3","P4","P5","P6","P7","I1","I2" };
-    const uint8_t adc[]    = {  1,   1,   2,   2,   2,   1,   2,   1,   2  };
+    const uint8_t adc[]    = {  CH_ADC_ANY, CH_ADC_ANY, CH_ADC2, CH_ADC2, CH_ADC2,
+                                CH_ADC1, CH_ADC2, CH_ADC1, CH_ADC2 };
 
     check(g_channel_count == 9, "9 channels in table", "");
     for (int i = 0; i < 9; i++) {

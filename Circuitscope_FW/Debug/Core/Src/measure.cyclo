@@ -1,1 +1,8 @@
-../Core/Src/measure.c:14:6:measure_run	3
+../Core/Src/measure.c:43:6:measure_init	1
+../Core/Src/measure.c:59:26:adc_setup	6
+../Core/Src/measure.c:91:13:timer_setup	1
+../Core/Src/measure.c:104:13:capture_stop	5
+../Core/Src/measure.c:116:13:reply_hwfail	1
+../Core/Src/measure.c:127:6:HAL_ADC_ConvCpltCallback	5
+../Core/Src/measure.c:137:6:HAL_ADC_ErrorCallback	5
+../Core/Src/measure.c:148:6:measure_run	17
