@@ -1,6 +1,7 @@
 Core/Src/measure.o: ../Core/Src/measure.c ../Core/Inc/measure.h \
  ../Core/Inc/sampling.h ../Core/Inc/channels.h ../Core/Inc/protocol.h \
- ../Core/Inc/comms.h ../Core/Inc/adc.h ../Core/Inc/main.h \
+ ../Core/Inc/comms.h ../Core/Inc/lcd.h ../Core/Inc/watchdog.h \
+ ../Core/Inc/adc.h ../Core/Inc/main.h \
  ../Drivers/STM32G4xx_HAL_Driver/Inc/stm32g4xx_hal.h \
  ../Core/Inc/stm32g4xx_hal_conf.h \
  ../Drivers/STM32G4xx_HAL_Driver/Inc/stm32g4xx_hal_rcc.h \
@@ -43,6 +44,8 @@ Core/Src/measure.o: ../Core/Src/measure.c ../Core/Inc/measure.h \
 ../Core/Inc/channels.h:
 ../Core/Inc/protocol.h:
 ../Core/Inc/comms.h:
+../Core/Inc/lcd.h:
+../Core/Inc/watchdog.h:
 ../Core/Inc/adc.h:
 ../Core/Inc/main.h:
 ../Drivers/STM32G4xx_HAL_Driver/Inc/stm32g4xx_hal.h:

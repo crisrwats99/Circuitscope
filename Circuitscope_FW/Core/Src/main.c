@@ -28,6 +28,14 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 
+#include "comms.h"     /* USART2 link to the PC                              */
+#include "protocol.h"  /* command parser                                     */
+#include "linebuf.h"   /* CMD_LINE_MAX                                       */
+#include "board.h"     /* status LED                                         */
+#include "measure.h"   /* SAMPLE capture (TIM2 + ADC + DMA)                  */
+#include "lcd.h"       /* 16x2 status display on I2C1                        */
+#include "watchdog.h"  /* independent watchdog: resets the box if it freezes */
+
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -100,7 +108,13 @@ int main(void)
   MX_TIM2_Init();
   MX_I2C1_Init();
   /* USER CODE BEGIN 2 */
-
+  measure_init();    /* calibrate ADC1 and ADC2 once at start-up          */
+  lcd_init();        /* find the LCD and show name + box ID (if fitted)   */
+  if (watchdog_caused_reset()) {
+    lcd_status("Watchdog reset");  /* box froze last time and restarted itself */
+  }
+  comms_init();      /* start listening for PC commands on USART2         */
+  watchdog_init();   /* LAST: from here the main loop must kick every <2 s */
   /* USER CODE END 2 */
 
   /* Initialize leds */
@@ -125,6 +139,22 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+	    watchdog_kick();               /* "still alive" - must run at least every 2 s */
+
+	    char line[CMD_LINE_MAX + 1];   /* one received command */
+
+	    switch (comms_get_line(line, sizeof line)) {
+	    case COMMS_LINE:
+	      board_led_toggle();          /* LED changes state on every command     */
+	      lcd_pc_connected();          /* first command: show "PC connected"     */
+	      protocol_handle_line(line);  /* parse and reply                        */
+	      break;
+	    case COMMS_TOO_LONG:
+	      protocol_handle_too_long();  /* line over 64 chars: ERR BADCMD         */
+	      break;
+	    default:
+	      break;                       /* nothing received yet                   */
+	    }
   }
   /* USER CODE END 3 */
 }

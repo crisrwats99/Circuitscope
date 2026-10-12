@@ -1,0 +1,2 @@
+../Core/Src/lcd_fmt.c:7:6:lcd_encode	3
+../Core/Src/lcd_fmt.c:20:6:lcd_fit	7

@@ -1,0 +1,4 @@
+../Core/Src/watchdog.c:20:6:watchdog_init	4	static
+../Core/Src/watchdog.c:36:6:watchdog_kick	4	static
+../Core/Src/watchdog.c:41:6:watchdog_caused_reset	16	static
+../Core/Src/watchdog.c:49:6:watchdog_test_hang	4	static,ignoring_inline_asm

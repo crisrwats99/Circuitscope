@@ -24,6 +24,7 @@
 #include "protocol.h"   /* MAX_POINTS */
 #include "comms.h"
 #include "lcd.h"
+#include "watchdog.h"
 #include "adc.h"        /* hadc1, hadc2 (CubeMX) */
 #include "tim.h"        /* htim2 (CubeMX)        */
 #include <stdio.h>
@@ -113,6 +114,14 @@ static void capture_stop(const capture_plan_t *plan)
             HAL_ADC_Stop_DMA(s_hadc[a]);
         }
     }
+}
+
+/** Send DATA text and keep the watchdog alive: a 4000-sample line takes
+ *  ~1.6 s at 115200 baud, so it is kicked after every 128-byte chunk. */
+static void send_and_kick(const char *data, size_t len)
+{
+    comms_send(data, len);
+    watchdog_kick();
 }
 
 /** Send "ERR HWFAIL <message>". */
@@ -207,6 +216,7 @@ void measure_run(const uint8_t *ch_index, uint8_t n_ch, uint32_t rate_hz, uint32
     uint32_t limit_ms = sampling_duration_ms(divider, n) + 1000u;
     uint32_t t0       = HAL_GetTick();
     while ((plan.adc[0].used && !s_done[0]) || (plan.adc[1].used && !s_done[1])) {
+        watchdog_kick();                 /* long captures (up to ~4000 s) are normal */
         if (s_error) {
             capture_stop(&plan);
             reply_hwfail("ADC/DMA error during capture; try again, reset the box if it repeats");
@@ -225,7 +235,7 @@ void measure_run(const uint8_t *ch_index, uint8_t n_ch, uint32_t rate_hz, uint32
 
     /* ---- 6. Send each channel in the order asked, then DONE ---- */
     for (uint8_t k = 0; k < n_ch; k++) {
-        sampling_send_data(s_buf, plan.out_offset[k], plan.out_stride[k], n, comms_send);
+        sampling_send_data(s_buf, plan.out_offset[k], plan.out_stride[k], n, send_and_kick);
     }
     sampling_format_done(line, sizeof line, divider);
     comms_send_line(line);

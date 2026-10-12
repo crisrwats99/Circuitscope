@@ -1,0 +1,8 @@
+../Core/Src/lcd.c:35:13:pcf_write	24	static
+../Core/Src/lcd.c:44:13:lcd_nibble	24	static
+../Core/Src/lcd.c:52:13:lcd_byte	24	static
+../Core/Src/lcd.c:60:13:lcd_line	40	static
+../Core/Src/lcd.c:74:6:lcd_init	48	static
+../Core/Src/lcd.c:112:6:lcd_present	4	static
+../Core/Src/lcd.c:117:6:lcd_status	16	static
+../Core/Src/lcd.c:122:6:lcd_pc_connected	8	static

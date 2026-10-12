@@ -21,6 +21,9 @@
 #include "comms.h"
 #include "board.h"
 #include "measure.h"
+#ifdef DEBUG
+#include "watchdog.h"
+#endif
 
 #include <stdio.h>
 #include <stdarg.h>
@@ -257,6 +260,17 @@ static void cmd_sample(uint32_t argc, char *argv[])
     measure_run(ch_index, n_ch, rate_hz, n);
 }
 
+#ifdef DEBUG
+/** WDTEST (Debug builds only, not part of the PC protocol): freeze on
+ *  purpose to prove the watchdog resets the box. Not present in Release. */
+static void cmd_wdtest(uint32_t argc, char *argv[])
+{
+    if (!expect_no_args(argc, argv)) return;
+    comms_send_line("OK freezing now - watchdog should reset the box within ~2 s");
+    watchdog_test_hang();
+}
+#endif
+
 /* ------------------------------------------------------------------------ */
 /*  Command table and dispatcher                                            */
 /* ------------------------------------------------------------------------ */
@@ -271,6 +285,9 @@ static const command_t s_commands[] = {
     { "INFO?",  cmd_info   },
     { "ID?",    cmd_id     },
     { "SAMPLE", cmd_sample },
+#ifdef DEBUG
+    { "WDTEST", cmd_wdtest },   /* Debug builds only */
+#endif
 };
 #define N_COMMANDS  (sizeof s_commands / sizeof s_commands[0])
 

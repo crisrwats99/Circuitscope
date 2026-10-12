@@ -1,0 +1,4 @@
+../Core/Src/watchdog.c:20:6:watchdog_init	2
+../Core/Src/watchdog.c:36:6:watchdog_kick	1
+../Core/Src/watchdog.c:41:6:watchdog_caused_reset	1
+../Core/Src/watchdog.c:49:6:watchdog_test_hang	1
