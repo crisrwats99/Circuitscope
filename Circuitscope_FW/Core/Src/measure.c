@@ -15,12 +15,15 @@
  *      brief requires), followed by DONE with the rate really achieved.
  *
  * While capturing, nothing else is switched (no LED, no LCD) to keep noise low.
+ * The LCD is updated only BEFORE the ADCs are armed ("Sampling P1,P2") and
+ * AFTER they have stopped ("Sending data", then "Ready").
  */
 #include "measure.h"
 #include "sampling.h"
 #include "channels.h"
 #include "protocol.h"   /* MAX_POINTS */
 #include "comms.h"
+#include "lcd.h"
 #include "adc.h"        /* hadc1, hadc2 (CubeMX) */
 #include "tim.h"        /* htim2 (CubeMX)        */
 #include <stdio.h>
@@ -118,6 +121,7 @@ static void reply_hwfail(const char *msg)
     char line[160];
     snprintf(line, sizeof line, "ERR HWFAIL %s", msg);
     comms_send_line(line);
+    lcd_status("HW error - reset");
 }
 
 /* ------------------------------------------------------------------------ */
@@ -175,6 +179,11 @@ void measure_run(const uint8_t *ch_index, uint8_t n_ch, uint32_t rate_hz, uint32
         }
     }
 
+    /* ---- LCD: show what is being captured (last I2C traffic before sampling) ---- */
+    snprintf(line, sizeof line, "Sampling %s%s%s", g_channels[ch_index[0]].name,
+             (n_ch == 2u) ? "," : "", (n_ch == 2u) ? g_channels[ch_index[1]].name : "");
+    lcd_status(line);
+
     /* ---- 3. Timer ---- */
     divider = sampling_divider(rate_hz);
     timer_setup(divider);
@@ -212,6 +221,7 @@ void measure_run(const uint8_t *ch_index, uint8_t n_ch, uint32_t rate_hz, uint32
         }
     }
     capture_stop(&plan);
+    lcd_status("Sending data");          /* ADCs stopped: safe to use I2C again */
 
     /* ---- 6. Send each channel in the order asked, then DONE ---- */
     for (uint8_t k = 0; k < n_ch; k++) {
@@ -219,4 +229,5 @@ void measure_run(const uint8_t *ch_index, uint8_t n_ch, uint32_t rate_hz, uint32
     }
     sampling_format_done(line, sizeof line, divider);
     comms_send_line(line);
+    lcd_status("Ready");
 }
