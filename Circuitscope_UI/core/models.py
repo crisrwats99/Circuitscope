@@ -45,10 +45,11 @@ from core.formulas import (CONSTANTS, FUNCTIONS, FormulaError, check_formula,   
 # so the app can recognise (and upgrade) files saved by older versions.
 SCHEMA_VERSION = 3
 
-# Largest number of samples one waveform capture may contain. The STM32G431KB
-# has limited RAM, so this is a PLACEHOLDER to be confirmed once the firmware
-# exists. Having it as one constant means we change it in one place only.
-MAX_WAVEFORM_POINTS = 8000
+# The firmware's limits for one waveform capture (confirmed in the firmware interface
+# reference): up to 4000 samples per channel, at 1 to 100 000 samples per second. The box
+# also reports them (INFO?) and the app uses the box's own numbers when connected.
+MAX_WAVEFORM_POINTS = 4000
+MAX_SAMPLE_RATE_HZ = 100_000
 
 # Largest embedded image (after encoding). Images live INSIDE the assessment file so
 # the practical stays a single file; the limit keeps that file (and every student's
@@ -606,6 +607,9 @@ class Assessment:
                             if wf.num_points <= 0:
                                 problems.append(f"{where}: the number of points is {wf.num_points}. "
                                                 f"It must be at least 1.")
+                            if wf.sample_rate_hz > MAX_SAMPLE_RATE_HZ:
+                                problems.append(f"{where}: {wf.sample_rate_hz:g} Hz is faster than the box can "
+                                                f"sample ({MAX_SAMPLE_RATE_HZ:,} Hz). Use a lower rate.")
                             if wf.num_points > MAX_WAVEFORM_POINTS:
                                 problems.append(f"{where}: {wf.num_points} points is more than the box can "
                                                 f"store ({MAX_WAVEFORM_POINTS}). Use fewer points.")

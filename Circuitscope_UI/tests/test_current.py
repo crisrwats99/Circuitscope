@@ -23,7 +23,7 @@ def make_device(**board_options) -> SerialDevice:
 # ---------- channel lists ----------
 
 def test_channel_lists_match_the_hardware():
-    assert channels.VOLTAGE_CHANNELS == ["P1", "P2", "P3", "P4", "P5"]
+    assert channels.VOLTAGE_CHANNELS == ["P1", "P2", "P3", "P4", "P5", "P6", "P7"]
     assert channels.CURRENT_CHANNELS == ["I1", "I2"]
     assert not set(channels.VOLTAGE_CHANNELS) & set(channels.CURRENT_CHANNELS)
 
@@ -152,10 +152,10 @@ def test_the_two_current_inputs_read_independently():
     assert device.measure_current("I2") == pytest.approx(-12.0, abs=0.05)
 
 
-def test_p6_no_longer_exists_because_pa7_is_a_current_input():
+def test_an_input_that_does_not_exist_is_refused():
     device = make_device()
-    with pytest.raises(Exception, match="P6"):
-        device.measure_voltage("P6", "P3")
+    with pytest.raises(Exception, match="P8"):
+        device.measure_voltage("P8", "P3")
 
 
 def test_each_current_input_has_its_own_calibration():

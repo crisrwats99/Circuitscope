@@ -15,6 +15,7 @@ loaded automatically.
 """
 
 from __future__ import annotations
+from core.channels import VOLTAGE_CHANNELS
 
 from datetime import datetime
 
@@ -26,7 +27,7 @@ from hardware.calibration_store import (CalibrationError, delete_calibration, lo
                                         save_calibration)
 from ui.background import run_in_background
 
-CHANNELS = ["P0", "P1", "P2", "P3", "P4", "P5"]
+CHANNELS = VOLTAGE_CHANNELS
 MIN_SPAN_V = 1.0           # the two references must be at least this far apart
 
 

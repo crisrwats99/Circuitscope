@@ -9,6 +9,15 @@ The box ONLY SAMPLES. It returns RAW ADC COUNTS (whole numbers 0..4095 for a
 12-bit converter). Turning counts into volts and everything else happens on
 the PC (see calibration.py and core/waveform.py).
 
+Facts about the real firmware (NUCLEO-G431KB, see the firmware interface reference):
+  * USB virtual COM port, 115200 baud 8N1. The PC may end a command with LF, CR or CR+LF;
+    the box ends EVERY reply line with CR+LF.
+  * One command at a time: send the next only after DONE (or ERR) for the previous SAMPLE.
+  * Up to 4000 samples per channel and 1..100000 samples per second. Both are reported by INFO?.
+  * A SAMPLE reply only starts after the capture is finished, so a long capture needs a long
+    timeout (see sample_timeout_s below).
+  * Error codes: BADCMD, BADARGS, BADCH, BADRATE, BADCOUNT and HWFAIL (the capture failed in hardware).
+
   PC sends                      box replies
   ---------------------------   --------------------------------------------
   PING                          PONG
@@ -32,6 +41,9 @@ import re
 
 PROTOCOL_VERSION = 1          # bump when the commands change; the PC refuses a box with a different number
 MAX_CHANNELS_PER_SAMPLE = 2   # one signal, or a signal plus its reference
+
+# How many bytes per second the serial link carries: 115200 baud, 10 bits per byte (start + 8 + stop).
+SERIAL_BYTES_PER_SECOND = 11_520
 
 # A channel name: a letter, then up to 7 letters/digits/underscores ("P1", "P3", "CH_A").
 _CHANNEL_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_]{0,7}$")
@@ -69,6 +81,17 @@ def build_sample_command(channels: list[str], rate_hz: float, num_points: int) -
     if rate <= 0 or num_points <= 0 or int(num_points) != num_points:
         raise DeviceError("Sample rate and number of points must be positive whole numbers.")
     return f"SAMPLE {names} {rate} {int(num_points)}\n"
+
+
+def sample_timeout_s(num_points: int, rate_hz: float, num_channels: int) -> float:
+    """
+    How long to wait for the reply to a SAMPLE command, in seconds. The box captures first
+    (n / rate seconds) and only then sends the data (about 5 characters per sample), so a
+    fixed 3 seconds is far too short for a long capture. One extra second covers the rest.
+    """
+    capture = num_points / rate_hz
+    transfer = (5 * num_points * num_channels + 40) / SERIAL_BYTES_PER_SECOND
+    return capture + transfer + 1.0
 
 
 # ---------------------------------------------------------------------------

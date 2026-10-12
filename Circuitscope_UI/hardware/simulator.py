@@ -28,15 +28,16 @@ from typing import Callable
 import numpy as np
 
 from hardware import protocol
-from core.channels import CURRENT_CHANNELS, VOLTAGE_CHANNELS
+from core.channels import CURRENT_CHANNELS, VOLTAGE_CHANNELS, scan_lag_s
 from hardware.calibration import CURRENT_SENSE, DIRECT, FrontEnd
 
 TIMER_CLOCK_HZ = 170_000_000      # the G431 timer clock: sample rates are TIMER_CLOCK / whole number
+MAX_LINE_LENGTH = 64              # the firmware discards a command line longer than this
 
 
 class SimulatedBoard:
     def __init__(self, uid_words=(0x0012AB34, 0xCD56EF78, 0x0011AABB), *,
-                 max_points: int = 8000, max_rate_hz: int = 200_000,
+                 max_points: int = 4000, max_rate_hz: int = 100_000,
                  adc_bits: int = 12, vref_v: float = 3.3,
                  noise_v: float = 0.0, seed: int = 1, protocol_version: int | None = None,
                  adc_gain: float = 1.0, adc_offset_v: float = 0.0,
@@ -53,6 +54,7 @@ class SimulatedBoard:
         self.protocol_version = protocol_version or protocol.PROTOCOL_VERSION
         self._rng = np.random.default_rng(seed)     # fixed seed -> same noise every run
         self._signals: dict[str, float | Callable] = {}
+        self.fail_next_sample = False               # True = the next SAMPLE fails in hardware (ERR HWFAIL)
         # The inputs the board answers to. The current inputs have their own analogue circuit
         # (a signal on I1 is in MILLIAMPS), so each channel can have its own front end.
         self.known_channels = set(VOLTAGE_CHANNELS) | set(CURRENT_CHANNELS)
@@ -73,9 +75,11 @@ class SimulatedBoard:
 
     def handle(self, line: str) -> list[str]:
         """One command line in -> the list of reply lines out."""
+        if len(line) > MAX_LINE_LENGTH:             # the firmware discards over-long lines
+            return [f"ERR BADCMD line is longer than {MAX_LINE_LENGTH} characters"]
         parts = line.split()
         if not parts:
-            return ["ERR EMPTY No command received"]
+            return []                               # a blank line is ignored: no reply at all
         command = parts[0]
 
         if command == "PING":
@@ -93,13 +97,16 @@ class SimulatedBoard:
         if len(args) != 3:
             return ["ERR BADARGS SAMPLE needs: channels rate count"]
         channels = args[0].split(",")
+        if "" in channels or len(channels) > protocol.MAX_CHANNELS_PER_SAMPLE or len(set(channels)) != len(channels):
+            return [f"ERR BADARGS use one or two different channels, e.g. P1 or P1,P2 (got '{args[0]}')"]
         try:
             rate, count = int(args[1]), int(args[2])
         except ValueError:
             return ["ERR BADARGS rate and count must be whole numbers"]
         for ch in channels:
             if ch not in self.known_channels:
-                return [f"ERR BADCH Unknown channel {ch}"]
+                return [f"ERR BADCH unknown channel '{ch}'; valid channels are "
+                        f"{' '.join(sorted(self.known_channels))} (upper-case)"]
         if not 1 <= rate <= self.max_rate_hz:
             return [f"ERR BADRATE Rate must be 1..{self.max_rate_hz} Hz"]
         if not 1 <= count <= self.max_points:
@@ -110,12 +117,18 @@ class SimulatedBoard:
         divider = max(1, round(TIMER_CLOCK_HZ / rate))
         actual_rate = TIMER_CLOCK_HZ / divider
         t = np.arange(count) / actual_rate                    # time of each sample
+        if self.fail_next_sample:                             # a hardware failure, for testing the app's reaction
+            self.fail_next_sample = False
+            return ["ERR HWFAIL capture timed out after 5000 ms; check TIM2 TRGO = Update Event"]
 
         full_scale = 2 ** self.adc_bits - 1
         replies = []
-        for ch in channels:
+        for index, ch in enumerate(channels):
             signal = self._signals.get(ch, 0.0)               # unconnected point reads 0 V
-            volts = signal(t) if callable(signal) else np.full(count, signal)
+            # Two channels on the same converter are read one after the other: the second is taken
+            # a moment later than the first, exactly as the real box does.
+            lag = scan_lag_s(channels[0], ch) if index == 1 else 0.0
+            volts = signal(t + lag) if callable(signal) else np.full(count, signal)
             # input volts -> front end -> voltage at the converter pin -> imperfect converter
             front_end = self.channel_front_ends.get(ch, self.front_end)
             volts = front_end.to_pin(volts) * self.adc_gain + self.adc_offset_v
@@ -136,6 +149,9 @@ class SimulatedPort:
         self._to_pc: deque[bytes] = deque()      # reply lines waiting to be read
         self._partial = b""                      # command bytes received so far (no newline yet)
         self.silent = False                      # True = the box never answers (simulates unplugged/hung)
+        self.timeout = 3.0                       # like pyserial: how long the driver will wait for a reply line
+        self.timeout_log: list[float] = []       # the timeout in force when each command arrived (for tests)
+        self.ignore_next = 0                     # the next N commands get NO reply (a box that froze, then reset)
         self.closed = False
         self.commands: list[str] = []            # every command received (handy in tests)
 
@@ -145,9 +161,13 @@ class SimulatedPort:
             raw, self._partial = self._partial.split(b"\n", 1)
             line = raw.decode("ascii", errors="replace").strip()
             self.commands.append(line)
+            self.timeout_log.append(self.timeout)
+            if self.ignore_next > 0:
+                self.ignore_next -= 1
+                continue
             if not self.silent:
                 for reply in self.board.handle(line):
-                    self._to_pc.append((reply + "\n").encode("ascii"))
+                    self._to_pc.append((reply + "\r\n").encode("ascii"))     # the box ends every reply line with CR+LF
         return len(data)
 
     def readline(self) -> bytes:

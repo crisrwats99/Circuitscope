@@ -278,6 +278,28 @@ def _phase_difference(x: np.ndarray, ref: np.ndarray) -> float:
     return math.degrees(mean)               # already in the range -180..+180
 
 
+def align_delayed_channel(samples, sample_rate_hz: float, lag_s: float) -> np.ndarray:
+    """
+    Correct a channel that was sampled `lag_s` seconds LATER than the first channel.
+
+    When the box has to read two channels with the same converter it reads them one after
+    the other, so the second channel's samples are taken a little after the first's (1.412
+    microseconds). Sample i of the second channel therefore describes time (i / rate + lag),
+    not (i / rate). This returns what the channel looked like at the first channel's sample
+    times, by stepping back along the line between neighbouring samples. Only phase between
+    two signals is affected by the lag (0.5 degrees at 1 kHz, 5 degrees at 10 kHz).
+    """
+    x = np.asarray(samples, dtype=float)
+    if lag_s <= 0 or x.ndim != 1 or len(x) < 2:
+        return x
+    fraction = lag_s * _check_rate(sample_rate_hz)          # the lag as a fraction of one sample gap
+    if fraction >= 1.0:
+        raise WaveformError("The lag is longer than one sample interval, so it cannot be corrected.")
+    out = x.copy()
+    out[1:] = x[1:] + (x[:-1] - x[1:]) * fraction
+    return out
+
+
 # ---------------------------------------------------------------------------
 # The public function the rest of the application calls.
 # ---------------------------------------------------------------------------

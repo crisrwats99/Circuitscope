@@ -127,7 +127,7 @@ def test_connect_reads_the_uid_and_limits():
     device, _board, port = make_device()
     assert device.connected
     assert device.uid == "0012AB34CD56EF780011AABB"          # three words joined: the watermark
-    assert device.max_points == 8000 and device.max_rate_hz == 200_000
+    assert device.max_points == 4000 and device.max_rate_hz == 100_000
     assert port.commands[:2] == ["INFO?", "ID?"]
 
 
@@ -253,11 +253,11 @@ def test_simulator_answers_basic_commands():
     board = SimulatedBoard()
     assert board.handle("PING") == ["PONG"]
     assert board.handle("FLY")[0].startswith("ERR BADCMD")
-    assert board.handle("")[0].startswith("ERR")
+    assert board.handle("") == []                             # a blank line gets no reply at all
     assert board.handle("SAMPLE P1 1000")[0].startswith("ERR BADARGS")
     assert board.handle("SAMPLE P1 x y")[0].startswith("ERR BADARGS")
     assert board.handle("SAMPLE P1 0 10")[0].startswith("ERR BADRATE")
-    assert board.handle("SAMPLE P1 1000 99999")[0].startswith("ERR BADCOUNT")
+    assert board.handle("SAMPLE P1 1000 4001")[0].startswith("ERR BADCOUNT")
 
 
 # ---------- capturing waveforms ----------
@@ -293,9 +293,9 @@ def test_two_channel_capture_gives_gain_and_phase():
     board.set_wave("P1", sine(1000, amp=1.0))                       # reference (input)
     board.set_wave("P2", sine(1000, amp=0.5, phase_deg=-45))        # output: half size, 45 degrees late
     spec = WaveformSpec(feature=WaveformFeature.GAIN, channel="P2", channel_ref="P1",
-                        sample_rate_hz=50_000, num_points=5000)
+                        sample_rate_hz=50_000, num_points=4000)
     capture = device.capture_waveform(spec)
-    assert capture.ref_samples is not None and len(capture.ref_samples) == 5000
+    assert capture.ref_samples is not None and len(capture.ref_samples) == 4000
     gain = compute_feature(WaveformFeature.GAIN, capture.samples, capture.sample_rate_hz, capture.ref_samples)
     phase = compute_feature(WaveformFeature.PHASE_DIFFERENCE, capture.samples,
                             capture.sample_rate_hz, capture.ref_samples)

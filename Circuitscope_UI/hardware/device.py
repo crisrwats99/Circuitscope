@@ -17,17 +17,21 @@ That is what lets the whole driver be tested without hardware.
 
 from __future__ import annotations
 
+import time
+
 import numpy as np
 
-from core.channels import CURRENT_CHANNELS
+from core.channels import CURRENT_CHANNELS, scan_lag_s
 from core.models import MAX_WAVEFORM_POINTS, WaveformSpec
 from core.submission import WaveformCapture, format_uid
 from hardware import protocol
 from hardware.calibration import CURRENT_SENSE, DIRECT, Calibration, FrontEnd
+from core.waveform import align_delayed_channel
 from hardware.protocol import DeviceError, DeviceTimeout, ProtocolError
 
 DEFAULT_BAUD = 115200
-DEFAULT_TIMEOUT_S = 3.0          # how long to wait for one reply line
+DEFAULT_TIMEOUT_S = 3.0          # how long to wait for one reply line (quick commands; SAMPLE works out its own)
+RECOVERY_WAIT_S = 2.5            # the box's watchdog resets a frozen firmware within about 2 seconds
 
 
 def open_serial_port(port_name: str, baud: int = DEFAULT_BAUD, timeout_s: float = DEFAULT_TIMEOUT_S):
@@ -67,6 +71,7 @@ class SerialDevice:
         self.connected = False
         self.uid = ""                           # filled in by connect()
         self.max_points = MAX_WAVEFORM_POINTS   # replaced by the box's real limits in connect()
+        self.recovery_wait_s = RECOVERY_WAIT_S  # how long to wait for a frozen box to reset itself (tests set 0)
         self.max_rate_hz = 0
         self.adc_max = 4095
 
@@ -83,6 +88,17 @@ class SerialDevice:
         line = protocol.decode_line(raw)
         protocol.raise_if_error(line)
         return line
+
+    def _set_read_timeout(self, seconds: float):
+        """Change how long the port waits for a reply line. Returns the old value (None if the port has no timeout)."""
+        old = getattr(self.port, "timeout", None)
+        if hasattr(self.port, "timeout"):
+            self.port.timeout = seconds
+        return old
+
+    def _restore_read_timeout(self, old) -> None:
+        if old is not None and hasattr(self.port, "timeout"):
+            self.port.timeout = old
 
     def _flush(self) -> None:
         """Throw away any half-received reply so the next command starts clean."""
@@ -148,7 +164,20 @@ class SerialDevice:
         if rate_hz > self.max_rate_hz:
             raise DeviceError(f"{rate_hz} Hz is faster than the box can sample ({self.max_rate_hz} Hz).")
         command = protocol.build_sample_command(channels, rate_hz, num_points)
+        try:
+            return self._sample_once(command, channels, rate_hz, num_points)
+        except DeviceTimeout:
+            # The box may have frozen: its watchdog resets it within about 2 seconds. Wait, check it
+            # answers PING, then try the capture once more. If it still does not answer, say so.
+            if not self._recovered():
+                raise DeviceTimeout("The box stopped answering and did not recover. Unplug it, plug it "
+                                    "back in, and connect again.") from None
+            return self._sample_once(command, channels, rate_hz, num_points)
 
+    def _sample_once(self, command: str, channels: list[str], rate_hz: float,
+                     num_points: int) -> tuple[list[np.ndarray], float]:
+        """Send one SAMPLE command and read the whole reply, waiting as long as this capture needs."""
+        old_timeout = self._set_read_timeout(protocol.sample_timeout_s(num_points, rate_hz, len(channels)))
         try:
             self._send(command)
             data = [protocol.parse_data(self._read_line(), num_points, self.adc_max)
@@ -157,7 +186,21 @@ class SerialDevice:
         except DeviceError:
             self._flush()                    # do not let leftovers confuse the next command
             raise
+        finally:
+            self._restore_read_timeout(old_timeout)
         return [np.asarray(counts, dtype=float) for counts in data], actual_rate
+
+    def _recovered(self) -> bool:
+        """After a timeout: wait for the watchdog, clear the line, and see whether the box answers PING."""
+        if self.recovery_wait_s > 0:
+            time.sleep(self.recovery_wait_s)
+        self._flush()
+        try:
+            self._send("PING\n")
+            return self._read_line() == "PONG"
+        except DeviceError:
+            self._flush()
+            return False
 
     def sample(self, channels: list[str], rate_hz: float,
                num_points: int) -> tuple[list[np.ndarray], float]:
@@ -228,7 +271,13 @@ class SerialDevice:
         """Capture the raw samples a waveform item asks for (signal, plus reference if needed)."""
         channels = [spec.channel] + ([spec.channel_ref] if spec.channel_ref else [])
         volts, actual_rate = self.sample(channels, spec.sample_rate_hz, spec.num_points)
+        reference = None
+        if len(volts) > 1:
+            # Two channels on the same converter are read one after the other, so the reference was
+            # sampled a moment after the signal. Line it up so phase between them comes out right.
+            lag = scan_lag_s(channels[0], channels[1])
+            reference = [float(v) for v in align_delayed_channel(volts[1], actual_rate, lag)]
         return WaveformCapture(
             samples=[float(v) for v in volts[0]],
             sample_rate_hz=actual_rate,                       # the REAL rate, not the requested one
-            ref_samples=[float(v) for v in volts[1]] if len(volts) > 1 else None)
+            ref_samples=reference)

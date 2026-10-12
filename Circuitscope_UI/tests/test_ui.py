@@ -99,7 +99,7 @@ def test_connecting_to_the_simulated_box(qapp):
     connect_demo(panel)
     assert panel.device.connected
     assert panel.uid_label.text() == "UID: 0012AB34CD56EF780011AABB"
-    assert "8000 samples" in panel.limits_label.text()
+    assert "4000 samples" in panel.limits_label.text()
     assert panel.status_label.text() == "Connected"
     assert panel.connect_button.text() == "Disconnect" and panel.connect_button.isEnabled()
     assert not panel.mode_box.isEnabled()                 # cannot change the box while connected

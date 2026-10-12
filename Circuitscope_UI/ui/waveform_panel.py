@@ -22,7 +22,7 @@ from PySide6.QtWidgets import (QComboBox, QFileDialog, QFormLayout, QGroupBox, Q
                                QWidget)
 
 from core.export import write_waveform_csv
-from core.models import MAX_WAVEFORM_POINTS, WaveformFeature, WaveformSpec
+from core.models import MAX_SAMPLE_RATE_HZ, MAX_WAVEFORM_POINTS, WaveformFeature, WaveformSpec
 from core.waveform import compute_all, format_feature
 from core.channels import VOLTAGE_CHANNELS
 from ui.background import run_in_background
@@ -59,7 +59,7 @@ class WaveformPanel(QGroupBox):
         self.ref_box = QComboBox()
         self.ref_box.addItems([NO_REFERENCE] + CHANNELS)
         self.rate_spin = QSpinBox()
-        self.rate_spin.setRange(100, 200_000)
+        self.rate_spin.setRange(1, MAX_SAMPLE_RATE_HZ)
         self.rate_spin.setValue(50_000)
         self.rate_spin.setSuffix(" Hz")
         self.rate_spin.setGroupSeparatorShown(True)
@@ -166,7 +166,10 @@ class WaveformPanel(QGroupBox):
                             sample_rate_hz=self.rate_spin.value(), num_points=self.points_spin.value())
         self._captured_channels = (channel, reference)   # remembered so the legend names the right pins
         self._refresh_buttons(busy=True)
-        self.message_label.setText("Capturing...")
+        # The box captures first and only then sends, so a slow capture is silent for a while.
+        # We know how long it takes (points / rate), so say so instead of looking frozen.
+        seconds = spec.num_points / spec.sample_rate_hz
+        self.message_label.setText("Capturing..." if seconds < 2 else f"Capturing... about {seconds:.0f} seconds")
         self.message_label.setStyleSheet("")
         run_in_background(self.device.capture_waveform, spec,
                           on_result=self._show_capture, on_error=self._show_error,

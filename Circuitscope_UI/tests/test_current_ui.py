@@ -195,7 +195,7 @@ def test_switching_back_to_voltage_restores_the_voltage_inputs(editor):
     editor.i_quantity_box.setCurrentIndex(editor.i_quantity_box.findData("voltage"))
     assert item.quantity == Quantity.VOLTAGE
     data = [editor.i_pos_box.itemData(i) for i in range(editor.i_pos_box.count())]
-    assert "P1" in data and "P5" in data and "P6" not in data and "I1" not in data
+    assert "P1" in data and "P7" in data and "P8" not in data and "I1" not in data
     assert editor.item_form.isRowVisible(editor.i_neg_box)
 
 
@@ -205,9 +205,9 @@ def test_validation_rejects_a_current_on_a_voltage_input_and_the_reverse(editor)
     item.quantity, item.probe_pos, item.probe_neg = Quantity.CURRENT, "P1", None
     assert any("current input" in p for p in editor.assessment.validate())
     item.quantity, item.probe_pos, item.probe_neg = Quantity.VOLTAGE, "I1", "P3"
-    assert any("P1 to P5" in p for p in editor.assessment.validate())
+    assert any("P1 to P7" in p for p in editor.assessment.validate())
     item.probe_pos = "P0"
-    assert any("P1 to P5" in p for p in editor.assessment.validate())
+    assert any("P1 to P7" in p for p in editor.assessment.validate())
 
 
 def test_a_current_item_survives_saving_and_loading(editor, tmp_path):

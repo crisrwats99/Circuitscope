@@ -72,7 +72,7 @@ def test_connecting_sets_the_limits_from_the_box(qapp):
     panel = WaveformPanel()
     panel.set_device(demo_device())
     assert panel.capture_button.isEnabled() and not panel.save_button.isEnabled()
-    assert panel.points_spin.maximum() == 8000 and panel.rate_spin.maximum() == 200_000
+    assert panel.points_spin.maximum() == 4000 and panel.rate_spin.maximum() == 100_000
 
 
 # ---------- capturing ----------
@@ -147,7 +147,7 @@ def test_reference_equal_to_the_signal_is_refused(qapp):
 
 def test_capture_runs_off_the_main_thread_and_locks_the_buttons(qapp):
     class SlowDevice:
-        max_points, max_rate_hz = 8000, 200_000
+        max_points, max_rate_hz = 4000, 100_000
         thread = None
         def capture_waveform(self, spec):
             SlowDevice.thread = threading.get_ident()
@@ -165,7 +165,7 @@ def test_capture_runs_off_the_main_thread_and_locks_the_buttons(qapp):
 
 def test_failed_capture_is_shown_in_red_and_the_button_recovers(qapp):
     class BrokenDevice:
-        max_points, max_rate_hz = 8000, 200_000
+        max_points, max_rate_hz = 4000, 100_000
         def capture_waveform(self, spec):
             raise RuntimeError("The box did not reply.")
 
