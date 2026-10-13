@@ -2,13 +2,19 @@
  * @file    lcd.c
  * @brief   HD44780 16x2 LCD through a PCF8574 I2C backpack (see lcd.h).
  *
- * I2C1 runs at 100 kHz (PCF8574 maximum). One LCD byte = 4 I2C data bytes
- * (see lcd_encode), so a full 16-character line takes about 7 ms.
+ * Bus: I2C2 on PA8 (SDA, header D9) and PA9 (SCL, header D1), 100 kHz
+ * (PCF8574 maximum). One LCD byte = 4 I2C data bytes (see lcd_encode), so a
+ * full 16-character line takes about 7 ms.
+ *
+ * Why I2C2 and not I2C1 (PB7/PA15): on a stock NUCLEO-G431KB, solder bridges
+ * SB2/SB3 are closed, which joins PB7 to A4 (PA5 = P4) and PA15 to A5
+ * (PA6 = P5). The LCD's 5 V pull-ups on I2C1 would therefore sit on two ADC
+ * inputs. PA8/PA9 are free, 5 V-tolerant pins.
  */
 #include "lcd.h"
 #include "lcd_fmt.h"
 #include "board.h"     /* board_get_uid() */
-#include "i2c.h"       /* hi2c1 (CubeMX)  */
+#include "i2c.h"       /* hi2c2 (CubeMX)  */
 #include <stdio.h>
 
 /* PCF8574 7-bit addresses: 0x27 (PCF8574) or 0x3F (PCF8574A). HAL wants them shifted left. */
@@ -23,6 +29,8 @@ static const uint8_t s_candidates[] = { 0x27u, 0x3Fu };
 #define CMD_FUNCTION_SET 0x28u  /* 4-bit bus, 2 lines, 5x8 font       */
 #define CMD_SET_DDRAM    0x80u  /* + address: 0x00 = line 1, 0x40 = line 2 */
 
+#define LCD_I2C  hi2c2           /* I2C peripheral the LCD is on */
+
 static uint16_t s_addr;          /* HAL (8-bit) address, 0 = no LCD */
 static bool     s_present;
 static bool     s_connected_shown;
@@ -35,7 +43,7 @@ static bool     s_connected_shown;
 static void pcf_write(const uint8_t *bytes, uint16_t len)
 {
     if (!s_present) return;
-    if (HAL_I2C_Master_Transmit(&hi2c1, s_addr, (uint8_t *)bytes, len, I2C_TIMEOUT_MS) != HAL_OK) {
+    if (HAL_I2C_Master_Transmit(&LCD_I2C, s_addr, (uint8_t *)bytes, len, I2C_TIMEOUT_MS) != HAL_OK) {
         s_present = false;   /* LCD gone: never block the measurement box on it */
     }
 }
@@ -80,7 +88,7 @@ void lcd_init(void)
     s_present = false;
     for (uint8_t i = 0; i < sizeof s_candidates; i++) {
         uint16_t a = (uint16_t)(s_candidates[i] << 1);
-        if (HAL_I2C_IsDeviceReady(&hi2c1, a, 2u, I2C_TIMEOUT_MS) == HAL_OK) {
+        if (HAL_I2C_IsDeviceReady(&LCD_I2C, a, 2u, I2C_TIMEOUT_MS) == HAL_OK) {
             s_addr    = a;
             s_present = true;
             break;

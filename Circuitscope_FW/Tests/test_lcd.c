@@ -84,7 +84,7 @@ static void test_fit(void)
     check(strlen(out) == 16 && strncmp(out, "ID 0041002E", 11) == 0, "ID line", out);
 
     /* every status text used by the firmware fits without being cut */
-    const char *texts[] = { "Circuitscope", "PC connected", "Sampling P1,P2", "Sampling I2,P7",
+    const char *texts[] = { "Circuitscope", "PC connected", "Sampling P1,P2", "Sampling I2,P5",
                             "Sending data", "Ready", "HW error - reset" };
     for (size_t i = 0; i < sizeof texts / sizeof texts[0]; i++) {
         check(strlen(texts[i]) <= LCD_COLS, "status text fits 16 columns", texts[i]);

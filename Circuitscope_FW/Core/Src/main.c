@@ -55,8 +55,6 @@
 
 /* Private variables ---------------------------------------------------------*/
 
-COM_InitTypeDef BspCOMInit;
-
 /* USER CODE BEGIN PV */
 
 /* USER CODE END PV */
@@ -104,32 +102,27 @@ int main(void)
   MX_DMA_Init();
   MX_ADC1_Init();
   MX_ADC2_Init();
-  MX_USART2_UART_Init();
   MX_TIM2_Init();
-  MX_I2C1_Init();
+  MX_I2C2_Init();
+  MX_USART2_UART_Init();
   /* USER CODE BEGIN 2 */
   measure_init();    /* calibrate ADC1 and ADC2 once at start-up          */
   lcd_init();        /* find the LCD and show name + box ID (if fitted)   */
   if (watchdog_caused_reset()) {
     lcd_status("Watchdog reset");  /* box froze last time and restarted itself */
   }
-  comms_init();      /* start listening for PC commands on USART2         */
+  /* TEMPORARY: force PA3 back to USART2_RX (AF7). Something else sets it to AF12.
+     Remove once the CubeMX setting causing it is fixed. */
+  GPIO_InitTypeDef rx = {0};
+  rx.Pin       = VCP_RX_Pin;
+  rx.Mode      = GPIO_MODE_AF_PP;
+  rx.Pull      = GPIO_NOPULL;
+  rx.Speed     = GPIO_SPEED_FREQ_LOW;
+  rx.Alternate = GPIO_AF7_USART2;
+  HAL_GPIO_Init(VCP_RX_GPIO_Port, &rx);
+  comms_init();      /* start listening for PC commands on USART2 */
   watchdog_init();   /* LAST: from here the main loop must kick every <2 s */
   /* USER CODE END 2 */
-
-  /* Initialize leds */
-  BSP_LED_Init(LED_GREEN);
-
-  /* Initialize COM1 port (115200, 8 bits (7-bit data + 1 stop bit), no parity */
-  BspCOMInit.BaudRate   = 115200;
-  BspCOMInit.WordLength = COM_WORDLENGTH_8B;
-  BspCOMInit.StopBits   = COM_STOPBITS_1;
-  BspCOMInit.Parity     = COM_PARITY_NONE;
-  BspCOMInit.HwFlowCtl  = COM_HWCONTROL_NONE;
-  if (BSP_COM_Init(COM1, &BspCOMInit) != BSP_ERROR_NONE)
-  {
-    Error_Handler();
-  }
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
@@ -208,33 +201,6 @@ void SystemClock_Config(void)
 /* USER CODE BEGIN 4 */
 
 /* USER CODE END 4 */
-
-/* USER CODE BEGIN Header */
-/**
-  ******************************************************************************
-  * File Name          :
-  * Description        :
-  ******************************************************************************
-  * @attention
-  *
-  * Copyright (c) 2026 STMicroelectronics.
-  * All rights reserved.
-  *
-  * This software is licensed under terms that can be found in the LICENSE file
-  * in the root directory of this software component.
-  * If no LICENSE file comes with this software, it is provided AS-IS.
-  *
-  ******************************************************************************
-  */
-/* USER CODE END Header */
-
-/**
-  * @}
-  */
-
-/**
-  * @}
-  */
 
 /**
   * @brief  This function is executed in case of error occurrence.

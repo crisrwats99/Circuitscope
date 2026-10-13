@@ -175,20 +175,13 @@ void HAL_ADC_MspInit(ADC_HandleTypeDef* adcHandle)
       __HAL_RCC_ADC12_CLK_ENABLE();
     }
 
-    __HAL_RCC_GPIOF_CLK_ENABLE();
     __HAL_RCC_GPIOA_CLK_ENABLE();
     __HAL_RCC_GPIOB_CLK_ENABLE();
     /**ADC1 GPIO Configuration
-    PF0-OSC_IN     ------> ADC1_IN10
     PA0     ------> ADC1_IN1
     PA1     ------> ADC1_IN2
     PB0     ------> ADC1_IN15
     */
-    GPIO_InitStruct.Pin = P6_Pin;
-    GPIO_InitStruct.Mode = GPIO_MODE_ANALOG;
-    GPIO_InitStruct.Pull = GPIO_NOPULL;
-    HAL_GPIO_Init(P6_GPIO_Port, &GPIO_InitStruct);
-
     GPIO_InitStruct.Pin = P1_Pin|P2_Pin;
     GPIO_InitStruct.Mode = GPIO_MODE_ANALOG;
     GPIO_InitStruct.Pull = GPIO_NOPULL;
@@ -242,20 +235,13 @@ void HAL_ADC_MspInit(ADC_HandleTypeDef* adcHandle)
       __HAL_RCC_ADC12_CLK_ENABLE();
     }
 
-    __HAL_RCC_GPIOF_CLK_ENABLE();
     __HAL_RCC_GPIOA_CLK_ENABLE();
     /**ADC2 GPIO Configuration
-    PF1-OSC_OUT     ------> ADC2_IN10
     PA4     ------> ADC2_IN17
     PA5     ------> ADC2_IN13
     PA6     ------> ADC2_IN3
     PA7     ------> ADC2_IN4
     */
-    GPIO_InitStruct.Pin = P7_Pin;
-    GPIO_InitStruct.Mode = GPIO_MODE_ANALOG;
-    GPIO_InitStruct.Pull = GPIO_NOPULL;
-    HAL_GPIO_Init(P7_GPIO_Port, &GPIO_InitStruct);
-
     GPIO_InitStruct.Pin = P3_Pin|P4_Pin|P5_Pin|I2_Pin;
     GPIO_InitStruct.Mode = GPIO_MODE_ANALOG;
     GPIO_InitStruct.Pull = GPIO_NOPULL;
@@ -300,13 +286,10 @@ void HAL_ADC_MspDeInit(ADC_HandleTypeDef* adcHandle)
     }
 
     /**ADC1 GPIO Configuration
-    PF0-OSC_IN     ------> ADC1_IN10
     PA0     ------> ADC1_IN1
     PA1     ------> ADC1_IN2
     PB0     ------> ADC1_IN15
     */
-    HAL_GPIO_DeInit(P6_GPIO_Port, P6_Pin);
-
     HAL_GPIO_DeInit(GPIOA, P1_Pin|P2_Pin);
 
     HAL_GPIO_DeInit(I1_GPIO_Port, I1_Pin);
@@ -329,14 +312,11 @@ void HAL_ADC_MspDeInit(ADC_HandleTypeDef* adcHandle)
     }
 
     /**ADC2 GPIO Configuration
-    PF1-OSC_OUT     ------> ADC2_IN10
     PA4     ------> ADC2_IN17
     PA5     ------> ADC2_IN13
     PA6     ------> ADC2_IN3
     PA7     ------> ADC2_IN4
     */
-    HAL_GPIO_DeInit(P7_GPIO_Port, P7_Pin);
-
     HAL_GPIO_DeInit(GPIOA, P3_Pin|P4_Pin|P5_Pin|I2_Pin);
 
     /* ADC2 DMA DeInit */

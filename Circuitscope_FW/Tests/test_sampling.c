@@ -153,9 +153,9 @@ static void test_plan(void)
         { "P1", "I1", 2, 1 },   /* P1 moves to ADC2         */
         { "I1", "P1", 1, 2 },
         { "P3", "P1", 2, 1 },   /* P1 moves to ADC1         */
-        { "P6", "P3", 1, 2 },   /* fixed, different ADCs    */
+        { "I1", "P3", 1, 2 },   /* fixed, different ADCs    */
         { "I2", "I1", 2, 1 },   /* both current inputs      */
-        { "P2", "P7", 1, 2 },
+        { "P2", "P4", 1, 2 },
     };
     for (size_t i = 0; i < sizeof sim / sizeof sim[0]; i++) {
         p = plan_for(sim[i].a, sim[i].b, 2000, &ok);
@@ -171,7 +171,7 @@ static void test_plan(void)
 
     /* same-ADC pairs: scan with interleaved data */
     struct { const char *a, *b; int adc; } scan[] = {
-        { "P3", "P4", 2 }, { "P5", "I2", 2 }, { "I2", "P7", 2 }, { "P6", "I1", 1 },
+        { "P3", "P4", 2 }, { "P5", "I2", 2 }, { "I2", "P3", 2 }, { "P4", "P5", 2 },
     };
     for (size_t i = 0; i < sizeof scan / sizeof scan[0]; i++) {
         p = plan_for(scan[i].a, scan[i].b, 1000, &ok);

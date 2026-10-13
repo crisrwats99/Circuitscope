@@ -1,6 +1,6 @@
 /**
  * @file    channels.h
- * @brief   Maps protocol channel names (P1..P7, I1, I2) to ADC inputs.
+ * @brief   Maps protocol channel names (P1..P5, I1, I2) to ADC inputs.
  *
  * The table itself lives in channels.c - THAT is the file to edit if a
  * channel name must read a different pin.

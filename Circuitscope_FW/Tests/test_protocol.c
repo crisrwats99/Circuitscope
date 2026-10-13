@@ -148,9 +148,9 @@ static void test_sample_valid(void)
     expect_exact("SAMPLE P1,P2 10000 2000", "MEASURE_CALLED");    /* brief's example */
     check(g_m_nch == 2 && g_m_ch[0] == 0 && g_m_ch[1] == 1, "P1,P2 order kept", "");
 
-    expect_exact("SAMPLE I2,P7 20000 400", "MEASURE_CALLED");     /* order as asked */
-    check(g_m_ch[0] == channels_find("I2") && g_m_ch[1] == channels_find("P7"),
-          "I2,P7 order kept", "");
+    expect_exact("SAMPLE I2,P5 20000 400", "MEASURE_CALLED");     /* order as asked */
+    check(g_m_ch[0] == channels_find("I2") && g_m_ch[1] == channels_find("P5"),
+          "I2,P5 order kept", "");
 
     expect_exact("SAMPLE P1 1 1",          "MEASURE_CALLED");     /* lower limits */
     expect_exact("SAMPLE P1 100000 4000",  "MEASURE_CALLED");     /* upper limits */
@@ -165,7 +165,7 @@ static void test_sample_errors(void)
     expect("SAMPLE P1 1000 10 5",    "ERR BADARGS SAMPLE needs 3 arguments");
 
     /* channels */
-    expect("SAMPLE P8 1000 10",      "ERR BADCH unknown channel 'P8'; valid channels are P1 P2 P3 P4 P5 P6 P7 I1 I2");
+    expect("SAMPLE P8 1000 10",      "ERR BADCH unknown channel 'P8'; valid channels are P1 P2 P3 P4 P5 I1 I2");
     expect("SAMPLE p1 1000 10",      "ERR BADCH unknown channel 'p1'");
     expect("SAMPLE P1,P9 1000 10",   "ERR BADCH unknown channel 'P9'");
     expect("SAMPLE P1,P1 1000 10",   "ERR BADARGS channel P1 is listed twice");
@@ -252,16 +252,16 @@ static void test_line_assembly(void)
 
 static void test_channel_table(void)
 {
-    const char *expected[] = { "P1","P2","P3","P4","P5","P6","P7","I1","I2" };
+    const char *expected[] = { "P1","P2","P3","P4","P5","I1","I2" };
     const uint8_t adc[]    = {  CH_ADC_ANY, CH_ADC_ANY, CH_ADC2, CH_ADC2, CH_ADC2,
-                                CH_ADC1, CH_ADC2, CH_ADC1, CH_ADC2 };
+                                CH_ADC1, CH_ADC2 };
 
-    check(g_channel_count == 9, "9 channels in table", "");
-    for (int i = 0; i < 9; i++) {
+    check(g_channel_count == 7, "7 channels in table", "");
+    for (int i = 0; i < 7; i++) {
         check(channels_find(expected[i]) == i && g_channels[i].adc == adc[i],
               expected[i], "wrong position or ADC number");
     }
-    check(channels_find("P0") == -1 && channels_find("") == -1, "unknown names return -1", "");
+    check(channels_find("P0") == -1 && channels_find("P6") == -1 && channels_find("") == -1, "unknown names return -1", "");
 }
 
 int main(void)

@@ -1,6 +1,6 @@
 /**
  * @file    lcd.h
- * @brief   16x2 status LCD on I2C1 (PB7 SDA, PA15 SCL), PCF8574 backpack.
+ * @brief   16x2 status LCD on I2C2 (PA8 SDA = D9, PA9 SCL = D1), PCF8574 backpack.
  *
  *   Line 1: status - "Circuitscope", "PC connected", "Sampling P1,P2",
  *           "Sending data", "Ready", "HW error - reset"

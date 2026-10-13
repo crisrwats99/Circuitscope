@@ -29,9 +29,6 @@ extern "C" {
 /* Includes ------------------------------------------------------------------*/
 #include "stm32g4xx_hal.h"
 
-#include "stm32g4xx_nucleo.h"
-#include <stdio.h>
-
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 
@@ -60,14 +57,14 @@ void Error_Handler(void);
 /* USER CODE END EFP */
 
 /* Private defines -----------------------------------------------------------*/
-#define P6_Pin GPIO_PIN_0
-#define P6_GPIO_Port GPIOF
-#define P7_Pin GPIO_PIN_1
-#define P7_GPIO_Port GPIOF
 #define P1_Pin GPIO_PIN_0
 #define P1_GPIO_Port GPIOA
 #define P2_Pin GPIO_PIN_1
 #define P2_GPIO_Port GPIOA
+#define VCP_TX_Pin GPIO_PIN_2
+#define VCP_TX_GPIO_Port GPIOA
+#define VCP_RX_Pin GPIO_PIN_3
+#define VCP_RX_GPIO_Port GPIOA
 #define P3_Pin GPIO_PIN_4
 #define P3_GPIO_Port GPIOA
 #define P4_Pin GPIO_PIN_5
@@ -82,12 +79,8 @@ void Error_Handler(void);
 #define T_SWDIO_GPIO_Port GPIOA
 #define T_SWCLK_Pin GPIO_PIN_14
 #define T_SWCLK_GPIO_Port GPIOA
-#define LCD_SCL_Pin GPIO_PIN_15
-#define LCD_SCL_GPIO_Port GPIOA
 #define T_SWO_Pin GPIO_PIN_3
 #define T_SWO_GPIO_Port GPIOB
-#define LCD_SDA_Pin GPIO_PIN_7
-#define LCD_SDA_GPIO_Port GPIOB
 #define LED_STATUS_Pin GPIO_PIN_8
 #define LED_STATUS_GPIO_Port GPIOB
 

@@ -12,6 +12,9 @@
  *  Which pin you READ during a test is chosen by the command you type,
  *  e.g.  SAMPLE P3 1000 10  reads PA4 (header A3). Nothing to edit for that.
  * ========================================================================
+ *
+ *  NUCLEO-G431KB note: PF0/PF1 (D7/D8) are NOT connected to the header on a
+ *  stock board (solder bridges SB8/SB11 are open), so only 7 inputs exist.
  */
 #include "channels.h"
 #include <string.h>
@@ -35,8 +38,6 @@ const channel_t g_channels[] = {
     CH("P3",   CH_ADC2,     ADC_CHANNEL_17),  /* PA4    A3 */
     CH("P4",   CH_ADC2,     ADC_CHANNEL_13),  /* PA5    A4 */
     CH("P5",   CH_ADC2,     ADC_CHANNEL_3),   /* PA6    A5 */
-    CH("P6",   CH_ADC1,     ADC_CHANNEL_10),  /* PF0    D7 */
-    CH("P7",   CH_ADC2,     ADC_CHANNEL_10),  /* PF1    D8 */
     CH("I1",   CH_ADC1,     ADC_CHANNEL_15),  /* PB0    D3  (current sense 1) */
     CH("I2",   CH_ADC2,     ADC_CHANNEL_4),   /* PA7    A6  (current sense 2) */
 };
