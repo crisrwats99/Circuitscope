@@ -43,4 +43,15 @@ void lcd_encode(uint8_t value, bool is_char, bool backlight, uint8_t out[4]);
  */
 void lcd_fit(char out[LCD_COLS + 1], const char *text);
 
+/**
+ * @brief Short box tag shown on the LCD at start-up ("Box A3F1").
+ *        CRC-16/CCITT-FALSE (poly 0x1021, start 0xFFFF) over the 12 UID bytes
+ *        in memory order: w0, w1, w2, each little-endian.
+ *        The PC can work out the same tag from the ID? reply, e.g. in Python:
+ *          binascii.crc_hqx(struct.pack('<3I', w0, w1, w2), 0xFFFF)
+ *        Two boxes share a tag only by chance (about 1 in 65 536 per pair);
+ *        the full ID? value remains the real identity.
+ */
+uint16_t lcd_box_tag(const uint32_t uid[3]);
+
 #endif /* LCD_FMT_H */

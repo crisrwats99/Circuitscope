@@ -110,11 +110,16 @@ void lcd_init(void)
     HAL_Delay(2);                      /* clear is the one slow command     */
     lcd_byte(CMD_ENTRY_MODE, false);
 
-    /* 4. Start-up screen: name + box ID (first UID word). */
+    /* 4. Start-up screen: name + short box tag (CRC-16 of the 96-bit UID). */
     board_get_uid(uid);
-    snprintf(line, sizeof line, "ID %08lX", (unsigned long)uid[0]);
+    snprintf(line, sizeof line, "Box %04X", (unsigned)lcd_box_tag(uid));
     lcd_line(0, "Circuitscope");
     lcd_line(1, line);
+}
+
+void lcd_message(const char *text)
+{
+    lcd_line(1, text);
 }
 
 bool lcd_present(void)

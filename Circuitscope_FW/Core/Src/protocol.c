@@ -14,6 +14,9 @@
  *   BADCH    unknown channel name
  *   BADRATE  sample rate outside 1..MAX_RATE_HZ
  *   BADCOUNT sample count outside 1..MAX_POINTS
+ *
+ * LCD <text> is the one command whose argument may contain spaces, so it is
+ * recognised before the line is split into words (see protocol_handle_line).
  */
 #include "protocol.h"
 #include "linebuf.h"   /* CMD_LINE_MAX */
@@ -21,6 +24,7 @@
 #include "comms.h"
 #include "board.h"
 #include "measure.h"
+#include "lcd.h"
 #ifdef DEBUG
 #include "watchdog.h"
 #endif
@@ -260,6 +264,37 @@ static void cmd_sample(uint32_t argc, char *argv[])
     measure_run(ch_index, n_ch, rate_hz, n);
 }
 
+/**
+ * LCD <text>  - show up to 16 characters on LCD line 2 (instructions or a
+ * reading worked out by the PC, e.g. "Probe P1 -> Vout" or "P1 = 2.483 V").
+ * Everything after the first space is shown as-is (inner spaces kept,
+ * trailing spaces dropped). "LCD" alone clears line 2.
+ * Reply: OK, or OK NOLCD if no display is fitted (still a success for the PC).
+ *
+ * @param text  the raw text after "LCD" (may be empty)
+ */
+static void cmd_lcd(const char *text)
+{
+    size_t len;
+
+    if (*text == ' ') text++;                   /* the one separating space */
+    len = strlen(text);
+    while (len > 0u && text[len - 1u] == ' ') { /* drop trailing spaces     */
+        len--;
+    }
+    if (len > LCD_TEXT_MAX) {
+        reply_err("BADARGS", "LCD text is %u characters; the display line holds at most %u",
+                  (unsigned)len, (unsigned)LCD_TEXT_MAX);
+        return;
+    }
+
+    char line[LCD_TEXT_MAX + 1u];
+    memcpy(line, text, len);
+    line[len] = '\0';
+    lcd_message(line);
+    comms_send_line(lcd_present() ? "OK" : "OK NOLCD");
+}
+
 #ifdef DEBUG
 /** WDTEST (Debug builds only, not part of the PC protocol): freeze on
  *  purpose to prove the watchdog resets the box. Not present in Release. */
@@ -285,6 +320,7 @@ static const command_t s_commands[] = {
     { "INFO?",  cmd_info   },
     { "ID?",    cmd_id     },
     { "SAMPLE", cmd_sample },
+    { "LCD",    NULL       },   /* raw-text command: handled before tokenizing */
 #ifdef DEBUG
     { "WDTEST", cmd_wdtest },   /* Debug builds only */
 #endif
@@ -301,6 +337,16 @@ void protocol_handle_line(const char *line)
     strncpy(buf, line, sizeof buf - 1u);
     buf[sizeof buf - 1u] = '\0';
 
+    /* LCD <text>: the text may contain spaces, so take it straight from the line. */
+    {
+        const char *p = buf;
+        while (*p == ' ') p++;
+        if (strncmp(p, "LCD", 3) == 0 && (p[3] == ' ' || p[3] == '\0')) {
+            cmd_lcd(p + 3);
+            return;
+        }
+    }
+
     argc = tokenize(buf, argv, MAX_TOKENS);
     if (argc == 0) {
         return;                         /* blank line: ignored, no reply */
@@ -308,7 +354,7 @@ void protocol_handle_line(const char *line)
 
     /* Exact match first (commands are case-sensitive). */
     for (uint32_t i = 0; i < N_COMMANDS; i++) {
-        if (strcmp(argv[0], s_commands[i].name) == 0) {
+        if (s_commands[i].handler != NULL && strcmp(argv[0], s_commands[i].name) == 0) {
             s_commands[i].handler(argc, argv);
             return;
         }
@@ -322,7 +368,7 @@ void protocol_handle_line(const char *line)
             return;
         }
     }
-    reply_err("BADCMD", "unknown command '%s'; valid commands are PING, INFO?, ID?, SAMPLE",
+    reply_err("BADCMD", "unknown command '%s'; valid commands are PING, INFO?, ID?, SAMPLE, LCD",
               argv[0]);
 }
 

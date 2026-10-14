@@ -4,7 +4,8 @@
  *          assembler (linebuf.c) and the channel table (channels.c).
  *
  * Runs on a normal PC - no STM32 needed. The hardware functions that
- * protocol.c calls (comms_send_line, board_get_uid, measure_run) are
+ * protocol.c calls (comms_send_line, board_get_uid, measure_run,
+ * lcd_message, lcd_present) are
  * replaced by fakes below that record what happened.
  *
  * Build and run (from the project folder, with gcc installed):
@@ -21,6 +22,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdint.h>
+#include <stdbool.h>
 
 #include "protocol.h"
 #include "linebuf.h"
@@ -28,6 +30,7 @@
 #include "comms.h"
 #include "board.h"
 #include "measure.h"
+#include "lcd.h"
 
 /* ======================================================================== */
 /*  Fakes for the hardware functions                                        */
@@ -61,6 +64,18 @@ void measure_run(const uint8_t *ch, uint8_t n_ch, uint32_t rate_hz, uint32_t n)
     comms_send_line("MEASURE_CALLED");
 }
 
+static char g_lcd_text[64];         /* last text sent to LCD line 2 */
+static int  g_lcd_calls;
+static bool g_lcd_fitted = true;    /* pretend an LCD is connected  */
+
+void lcd_message(const char *text)
+{
+    strncpy(g_lcd_text, text, sizeof g_lcd_text - 1);
+    g_lcd_text[sizeof g_lcd_text - 1] = '\0';
+    g_lcd_calls++;
+}
+bool lcd_present(void) { return g_lcd_fitted; }
+
 /* ======================================================================== */
 /*  Tiny test framework                                                     */
 /* ======================================================================== */
@@ -70,6 +85,7 @@ static int g_pass, g_fail;
 static void reset_fakes(void)
 {
     g_reply[0] = '\0'; g_reply_count = 0; g_measure_calls = 0;
+    g_lcd_text[0] = '\0'; g_lcd_calls = 0; g_lcd_fitted = true;
 }
 
 static void check(int ok, const char *what, const char *detail)
@@ -264,6 +280,40 @@ static void test_channel_table(void)
     check(channels_find("P0") == -1 && channels_find("P6") == -1 && channels_find("") == -1, "unknown names return -1", "");
 }
 
+/** Send an LCD command; expect `reply` and (if lcd != NULL) that exact LCD text. */
+static void expect_lcd(const char *cmd, const char *reply, const char *lcd)
+{
+    char what[160];
+    reset_fakes();
+    protocol_handle_line(cmd);
+    snprintf(what, sizeof what, "'%s' -> '%s', LCD '%s'", cmd, reply, lcd ? lcd : "(unchanged)");
+    int ok = g_reply_count == 1 && strncmp(g_reply, reply, strlen(reply)) == 0;
+    ok = ok && (lcd ? (g_lcd_calls == 1 && strcmp(g_lcd_text, lcd) == 0) : (g_lcd_calls == 0));
+    check(ok, what, g_reply);
+}
+
+static void test_lcd_command(void)
+{
+    expect_lcd("LCD Probe P1 -> Vout", "OK", "Probe P1 -> Vout");          /* 16 chars, spaces kept */
+    expect_lcd("LCD P1 = 2.483 V",     "OK", "P1 = 2.483 V");
+    expect_lcd("LCD   centred",        "OK", "  centred");                  /* extra leading spaces kept */
+    expect_lcd("LCD Ready   ",         "OK", "Ready");                      /* trailing spaces dropped */
+    expect_lcd("LCD",                  "OK", "");                           /* clears line 2 */
+    expect_lcd("LCD ",                 "OK", "");
+    expect_lcd("  LCD Step 3 of 6",    "OK", "Step 3 of 6");                /* leading spaces before LCD */
+    expect_lcd("LCD 12345678901234567", "ERR BADARGS LCD text is 17 characters", NULL);
+    expect_lcd("lcd hello",            "ERR BADCMD unknown command 'lcd'; commands are upper-case, did you mean LCD?", NULL);
+    expect_lcd("LCDX",                 "ERR BADCMD", NULL);
+    expect_lcd("LCD?",                 "ERR BADCMD", NULL);
+
+    reset_fakes(); g_lcd_fitted = false;
+    protocol_handle_line("LCD Hello");
+    check(g_reply_count == 1 && strcmp(g_reply, "OK NOLCD") == 0, "LCD with no display -> OK NOLCD", g_reply);
+
+    expect("FOO", "ERR BADCMD unknown command 'FOO'; valid commands are PING, INFO?, ID?, SAMPLE, LCD");
+    expect_exact("PING", "PONG");                                          /* still works after LCD */
+}
+
 int main(void)
 {
     test_basic_commands();
@@ -271,6 +321,7 @@ int main(void)
     test_sample_errors();
     test_line_assembly();
     test_channel_table();
+    test_lcd_command();
 
     printf("\n%d passed, %d failed\n", g_pass, g_fail);
     return (g_fail == 0) ? 0 : 1;

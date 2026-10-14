@@ -32,3 +32,18 @@ void lcd_fit(char out[LCD_COLS + 1], const char *text)
     }
     out[LCD_COLS] = '\0';
 }
+
+uint16_t lcd_box_tag(const uint32_t uid[3])
+{
+    uint16_t crc = 0xFFFFu;
+    for (uint8_t w = 0; w < 3u; w++) {
+        for (uint8_t b = 0; b < 4u; b++) {
+            uint8_t byte = (uint8_t)(uid[w] >> (8u * b));   /* little-endian */
+            crc ^= (uint16_t)((uint16_t)byte << 8);
+            for (uint8_t bit = 0; bit < 8u; bit++) {
+                crc = (crc & 0x8000u) ? (uint16_t)((crc << 1) ^ 0x1021u) : (uint16_t)(crc << 1);
+            }
+        }
+    }
+    return crc;
+}

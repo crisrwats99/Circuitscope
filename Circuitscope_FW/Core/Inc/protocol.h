@@ -9,6 +9,7 @@
  *   INFO?                         -> INFO <protocol> <max_points> <max_rate_hz> <adc_bits> <vref_mv>
  *   ID?                           -> ID <w0> <w1> <w2>
  *   SAMPLE <ch>[,<ch2>] <rate> <n> -> DATA ... / DONE <actual_rate_hz>
+ *   LCD <text>                    -> OK  (or OK NOLCD)  text on LCD line 2, max 16 chars
  *   anything wrong                -> ERR <CODE> <message>
  *
  * This module contains NO hardware access, so it also compiles on a PC for

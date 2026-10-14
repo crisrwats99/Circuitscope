@@ -85,16 +85,39 @@ static void test_fit(void)
 
     /* every status text used by the firmware fits without being cut */
     const char *texts[] = { "Circuitscope", "PC connected", "Sampling P1,P2", "Sampling I2,P5",
-                            "Sending data", "Ready", "HW error - reset" };
+                            "Sending data", "Ready", "HW error - reset", "Watchdog reset" };
     for (size_t i = 0; i < sizeof texts / sizeof texts[0]; i++) {
         check(strlen(texts[i]) <= LCD_COLS, "status text fits 16 columns", texts[i]);
     }
+}
+
+static void test_box_tag(void)
+{
+    char d[96];
+    /* Expected values come from Python, i.e. the same calculation the PC will do:
+         binascii.crc_hqx(struct.pack('<3I', w0, w1, w2), 0xFFFF)
+       (crc_hqx with start 0xFFFF is CRC-16/CCITT-FALSE; its check value for
+       "123456789" is 0x29B1). */
+    const uint32_t uid_zero[3] = { 0, 0, 0 };
+    const uint32_t uid_a[3]    = { 0x0041002Eu, 0x3138510Au, 0x20333935u };
+    const uint32_t uid_b[3]    = { 0x0041002Fu, 0x3138510Au, 0x20333935u };
+    uint16_t z = lcd_box_tag(uid_zero), a = lcd_box_tag(uid_a), b = lcd_box_tag(uid_b);
+
+    snprintf(d, sizeof d, "zero=%04X a=%04X b=%04X", z, a, b);
+    check(z == 0x84F9u, "box tag of all-zero UID", d);
+    check(a == 0x1F57u,    "box tag of example UID (matches Python crc_hqx)", d);
+    check(a != b,            "one-bit UID change gives a different tag", d);
+
+    char line[LCD_COLS + 1];
+    snprintf(line, sizeof line, "Box %04X", (unsigned)a);
+    check(strlen(line) == 8, "\"Box XXXX\" fits line 2", line);
 }
 
 int main(void)
 {
     test_encode();
     test_fit();
+    test_box_tag();
     printf("\n%d passed, %d failed\n", g_pass, g_fail);
     return (g_fail == 0) ? 0 : 1;
 }

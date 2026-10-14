@@ -34,7 +34,7 @@ def sine(freq, amp=1.0, offset=1.65):
 # ---------- channels and converters ----------
 
 def test_the_channel_lists_match_the_firmware():
-    assert channels.VOLTAGE_CHANNELS == ["P1", "P2", "P3", "P4", "P5", "P6", "P7"]
+    assert channels.VOLTAGE_CHANNELS == ["P1", "P2", "P3", "P4", "P5"]
     assert channels.CURRENT_CHANNELS == ["I1", "I2"]
 
 
@@ -44,13 +44,13 @@ def test_every_input_is_on_exactly_one_converter_group():
     assert not (ADC_EITHER & ADC1_ONLY or ADC_EITHER & ADC2_ONLY or ADC1_ONLY & ADC2_ONLY)
 
 
-@pytest.mark.parametrize("a,b", [("P1", "P3"), ("P2", "I1"), ("P1", "P2"), ("P6", "P3"), ("I1", "I2"), ("I1", "P5"),
+@pytest.mark.parametrize("a,b", [("P1", "P3"), ("P2", "I1"), ("P1", "P2"), ("P1", "I1"), ("I1", "I2"), ("I1", "P5"),
                                  ("P3", "P1"), ("I2", "P2")])
 def test_pairs_on_different_converters_are_read_at_the_same_instant(a, b):
     assert scan_lag_s(a, b) == 0.0
 
 
-@pytest.mark.parametrize("a,b", [("P3", "P4"), ("P5", "I2"), ("I2", "P7"), ("P6", "I1"), ("I1", "P6"), ("P4", "P3")])
+@pytest.mark.parametrize("a,b", [("P3", "P4"), ("P5", "I2"), ("I2", "P4"), ("P3", "I2"), ("I2", "P3"), ("P4", "P3")])
 def test_pairs_on_the_same_converter_are_read_one_after_the_other(a, b):
     assert scan_lag_s(a, b) == SCAN_LAG_S == pytest.approx(1.412e-6)
 
@@ -200,7 +200,7 @@ def test_the_simulated_box_gives_the_firmwares_error_codes(line, code):
 
 def test_the_unknown_channel_message_lists_the_valid_channels():
     reply = SimulatedBoard().handle("SAMPLE P8 1000 10")[0]
-    assert all(name in reply for name in ["P1", "P7", "I1", "I2"])
+    assert all(name in reply for name in ["P1", "P5", "I1", "I2"])
 
 
 def test_the_boundary_values_the_firmware_accepts_are_accepted():
@@ -209,16 +209,15 @@ def test_the_boundary_values_the_firmware_accepts_are_accepted():
     assert board.handle("SAMPLE P1 1 1")[-1].startswith("DONE")
 
 
-# ---------- the new inputs ----------
+# ---------- the removed inputs ----------
 
-def test_the_demo_box_has_signals_on_p6_and_p7():
-    device = make_demo_device()
-    device.connect()
-    assert device.measure_voltage("P6", "P3") == pytest.approx(2.5, abs=0.05)
-    assert device.measure_voltage("P7", "P3") == pytest.approx(0.5, abs=0.05)
+def test_p6_and_p7_do_not_exist_on_a_stock_nucleo():
+    # PF0/PF1 are not on the headers (SB8/SB11 open), so the box has only P1-P5.
+    for name in ("P6", "P7"):
+        assert SimulatedBoard().handle(f"SAMPLE {name} 1000 10")[0].startswith("ERR BADCH")
 
 
-def test_the_voltage_pickers_offer_p6_and_p7():
+def test_the_voltage_pickers_offer_only_p1_to_p5():
     from PySide6.QtWidgets import QApplication
     QApplication.instance() or QApplication([])
     from ui.quick_measure import QuickMeasurePanel
@@ -226,7 +225,7 @@ def test_the_voltage_pickers_offer_p6_and_p7():
     for panel, boxes in ((QuickMeasurePanel(), ("pos_box", "neg_box")), (WaveformPanel(), ("channel_box", "ref_box"))):
         for name in boxes:
             box = getattr(panel, name)
-            assert box.findText("P6") >= 0 and box.findText("P7") >= 0
+            assert box.findText("P5") >= 0 and box.findText("P6") < 0
 
 
 def test_the_waveform_panel_allows_1_to_100000_hz():
