@@ -1,2 +1,3 @@
 ../Core/Src/lcd_fmt.c:7:6:lcd_encode	24	static
 ../Core/Src/lcd_fmt.c:20:6:lcd_fit	24	static
+../Core/Src/lcd_fmt.c:36:10:lcd_box_tag	24	static

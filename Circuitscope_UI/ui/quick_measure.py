@@ -11,7 +11,7 @@ from __future__ import annotations
 from PySide6.QtWidgets import (QComboBox, QFormLayout, QGroupBox, QLabel, QPushButton,
                                QVBoxLayout, QWidget)
 
-from core.channels import CURRENT_CHANNELS, VOLTAGE_CHANNELS
+from core.channels import CURRENT_CHANNELS, GROUND, GROUND_LABEL, NEGATIVE_PROBES, VOLTAGE_CHANNELS
 from ui.background import run_in_background
 
 CHANNELS = VOLTAGE_CHANNELS            # the box's voltage test points (see core/channels.py)
@@ -26,8 +26,9 @@ class QuickMeasurePanel(QGroupBox):
         self.pos_box.addItems(CHANNELS)
         self.pos_box.setCurrentText("P1")
         self.neg_box = QComboBox()
-        self.neg_box.addItems(CHANNELS)
-        self.neg_box.setCurrentText("P3")
+        for name in NEGATIVE_PROBES:                      # the test points, then the board ground
+            self.neg_box.addItem(GROUND_LABEL if name == GROUND else name, name)
+        self.neg_box.setCurrentIndex(self.neg_box.findData("P3"))
         self.measure_button = QPushButton("Measure voltage")
         self.result_label = QLabel("-")
         self.result_label.setStyleSheet("font-size: 28px; font-weight: bold;")
@@ -55,7 +56,7 @@ class QuickMeasurePanel(QGroupBox):
         self.message_label.setStyleSheet("")
 
     def _measure(self) -> None:
-        pos, neg = self.pos_box.currentText(), self.neg_box.currentText()
+        pos, neg = self.pos_box.currentText(), self.neg_box.currentData()
         if pos == neg:
             self._show_error("Choose two different test points.")
             return

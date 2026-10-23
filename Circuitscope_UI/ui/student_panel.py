@@ -29,6 +29,7 @@ from PySide6.QtWidgets import (QComboBox, QFileDialog, QFormLayout, QGroupBox, Q
                                QLineEdit, QMessageBox, QPlainTextEdit, QPushButton, QScrollArea, QSplitter,
                                QStackedWidget, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget)
 
+from core.channels import GROUND
 from core.models import Assessment, Quantity, VariableSource
 from core.session import ItemKind, ItemState, Mode, SessionError, StudentSession
 from core.submission import SubmissionError, save_submission
@@ -44,6 +45,11 @@ DEFAULT_PROGRESS_FOLDER = Path.home() / ".circuitscope" / "progress"
 
 MARKS = {ItemState.DONE: "✔ ", ItemState.TODO: "○ ", ItemState.UNSUPPORTED: "⊘ "}
 PAGE_OF = {ItemKind.MEASURE: 0, ItemKind.WAVEFORM: 1, ItemKind.THEORY: 2, ItemKind.UNSUPPORTED: 3}
+
+
+def _probe_name(probe: str | None) -> str:
+    """How a - probe is shown to the student: the board ground is named in words."""
+    return "the box's ground (GND)" if probe == GROUND else str(probe)
 
 
 class StudentPanel(QWidget):
@@ -368,7 +374,7 @@ class StudentPanel(QWidget):
                                         f"in series, then press Measure.")
             else:
                 self.probe_hint.setText(f"Connect the red probe to {item.probe_pos} and the black probe to "
-                                        f"{item.probe_neg}, then press Measure.")
+                                        f"{_probe_name(item.probe_neg)}, then press Measure.")
         elif kind == ItemKind.WAVEFORM:
             spec = item.waveform
             ref = f" and the reference to {spec.channel_ref}" if spec.channel_ref else ""
@@ -398,7 +404,7 @@ class StudentPanel(QWidget):
                 button = QPushButton(text)
                 where = (f"in series through the {variable.probe_pos} current input"
                          if variable.quantity == Quantity.CURRENT
-                         else f"red on {variable.probe_pos}, black on {variable.probe_neg}")
+                         else f"red on {variable.probe_pos}, black on {_probe_name(variable.probe_neg)}")
                 button.setToolTip(where)
                 button.clicked.connect(lambda _=False, q=question.id, v=variable: self._measure_variable(q, v))
                 button.setEnabled(self.device is not None and not self._busy)

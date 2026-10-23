@@ -40,7 +40,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QComboBox, QDoubleSpinBox, QFi
                                QTreeWidgetItem, QVBoxLayout, QWidget)
 
 from ui.image_picker import ImagePicker, PromptEdit
-from core.channels import CURRENT_CHANNELS, VOLTAGE_CHANNELS
+from core.channels import CURRENT_CHANNELS, GROUND, GROUND_LABEL, VOLTAGE_CHANNELS
 from core.models import (TWO_CHANNEL_FEATURES, ModePolicy, PracticeFeedback, AnswerMode, Assessment, Item, ItemType, Part,
                          Quantity, Question, ScoringMode, ToleranceMode, Variable,
                          VariableSource, WaveformFeature, WaveformSpec)
@@ -80,12 +80,15 @@ def _combo(entries, data_is_value: bool = True) -> QComboBox:
     return box
 
 
-def _channel_combo(allow_none: bool = False) -> QComboBox:
+def _channel_combo(allow_none: bool = False, ground: bool = False) -> QComboBox:
+    """Probe drop-down. With ground=True (the - probe) the board ground is offered after the test points."""
     box = QComboBox()
     if allow_none:
         box.addItem("(none)", None)
     for ch in VOLTAGE_CHANNELS:
         box.addItem(ch, ch)
+    if ground:
+        box.addItem(GROUND_LABEL, GROUND)
     return box
 
 
@@ -362,7 +365,7 @@ class AssessmentEditor(QWidget):
         self.i_mode_box = QComboBox()                      # filled in _load_item (the first entry names the question's default)
         self.i_quantity_box = _combo([("Voltage", Quantity.VOLTAGE.value), ("Current", Quantity.CURRENT.value)])
         self.i_pos_box = _channel_combo(allow_none=True)
-        self.i_neg_box = _channel_combo(allow_none=True)
+        self.i_neg_box = _channel_combo(allow_none=True, ground=True)
         self._pos_is_current = False           # which list the + probe box currently holds
         self.i_expected_edit = QLineEdit()
         self.i_expected_edit.setPlaceholderText("a number, e.g. 3.3")
@@ -787,7 +790,7 @@ class AssessmentEditor(QWidget):
         quantity = _combo([("Voltage", Quantity.VOLTAGE.value), ("Current", Quantity.CURRENT.value)])
         quantity.setCurrentIndex(quantity.findData(v.quantity.value if v.quantity else Quantity.VOLTAGE.value))
         is_current = v.quantity == Quantity.CURRENT
-        pos, neg = _channel_combo(), _channel_combo()
+        pos, neg = _channel_combo(), _channel_combo(ground=True)
         _fill_channel_box(pos, is_current)
         pos.setCurrentIndex(max(0, pos.findData(v.probe_pos or ("I1" if is_current else "P1"))))
         neg.setCurrentIndex(neg.findData(v.probe_neg or "P3"))

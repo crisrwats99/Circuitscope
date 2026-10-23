@@ -18,6 +18,13 @@ Units used throughout the app: voltages in volts, currents in MILLIAMPS.
 VOLTAGE_CHANNELS = ["P1", "P2", "P3", "P4", "P5"]
 CURRENT_CHANNELS = ["I1", "I2"]
 
+# The "- (black)" probe can also be the MCU's own ground. Every pin is measured against the board
+# ground, so a reading of P1 with the negative probe on GND is simply P1 relative to ground
+# (no second channel is sampled). It is only ever a NEGATIVE probe choice, never a + probe.
+GROUND = "GND"
+GROUND_LABEL = "GND (board ground)"
+NEGATIVE_PROBES = VOLTAGE_CHANNELS + [GROUND]
+
 # Which converter each pin can use (from the firmware interface reference).
 ADC_EITHER = {"P1", "P2"}                       # can use ADC1 or ADC2, so pairs with any channel at once
 ADC1_ONLY = {"I1"}
@@ -29,6 +36,10 @@ SCAN_LAG_S = 1.412e-6
 
 def voltage_range_text() -> str:
     return f"{VOLTAGE_CHANNELS[0]} to {VOLTAGE_CHANNELS[-1]}"
+
+
+def negative_range_text() -> str:
+    return f"{voltage_range_text()} or {GROUND}"
 
 
 def scan_lag_s(first: str, second: str) -> float:

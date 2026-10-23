@@ -21,7 +21,7 @@ import time
 
 import numpy as np
 
-from core.channels import CURRENT_CHANNELS, scan_lag_s
+from core.channels import CURRENT_CHANNELS, GROUND, scan_lag_s
 from core.models import MAX_WAVEFORM_POINTS, WaveformSpec
 from core.submission import WaveformCapture, format_uid
 from hardware import protocol
@@ -233,6 +233,10 @@ class SerialDevice:
         """
         if probe_pos == probe_neg:
             raise DeviceError("The two probe points are the same, so there is nothing to measure.")
+        if probe_neg == GROUND:
+            # Every pin is read against the board ground, so one channel is enough.
+            (v_pos,), _rate = self.sample([probe_pos], rate_hz, num_points)
+            return float(np.mean(v_pos))
         (v_pos, v_neg), _rate = self.sample([probe_pos, probe_neg], rate_hz, num_points)
         return float(np.mean(v_pos) - np.mean(v_neg))
 
